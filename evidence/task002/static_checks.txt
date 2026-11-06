@@ -1,0 +1,10 @@
+TASK 002 / stage 1 — static checks only
+
+gdtoolkit gdparse scripts/*.gd tests/*.gd: PASS
+gdtoolkit gdlint scripts/placement_controller.gd tests/placement_smoke.gd:
+Success: no problems found
+git diff --check: PASS
+
+Godot runtime test NOT RUN: engine unavailable; GitHub binary download redirects
+outside permitted network hosts. No TASK 002 screenshot or video was captured.
+See docs/TASK_002_STAGE_1.md for reproduction and outstanding acceptance checks.
