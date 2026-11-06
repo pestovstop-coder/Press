@@ -1,8 +1,8 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 ; Task 002 stage 1 — original room plus placement controller.
-; All geometry is Godot BoxMesh primitives with neutral placeholder materials.
-; Temporary placement blocks only; no furniture, characters or simulation.
+; Original room primitives retained; office_desk is an external GLB instance.
+; Placement blocks retained; desk is static and not connected to placement.
 
 [ext_resource type="Script" path="res://scripts/camera_controller.gd" id="1_camera"]
 [ext_resource type="Material" path="res://assets/materials/floor.tres" id="2_floor"]
@@ -10,6 +10,8 @@
 [ext_resource type="Material" path="res://assets/materials/doorway.tres" id="4_doorway"]
 
 [ext_resource type="Script" path="res://scripts/placement_controller.gd" id="5_placement"]
+
+[ext_resource type="PackedScene" path="res://assets/models/furniture/desks/office_desk.glb" id="6_desk"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_floor"]
 size = Vector3(12, 0.2, 10)
@@ -90,3 +92,6 @@ current = true
 
 [node name="PlacementController" type="Node3D" parent="."]
 script = ExtResource("5_placement")
+
+[node name="OfficeDesk" parent="TestRoom" instance=ExtResource("6_desk")]
+position = Vector3(0, 0, 0)

@@ -1,0 +1,35 @@
+{
+  "tool": "Python / trimesh 5.2.0",
+  "method": "Explicit chamfered polygon meshes; no Godot primitives",
+  "parts": 9,
+  "triangles": 396,
+  "bounds_xyz_m": [
+    [
+      -0.8,
+      0.0,
+      -0.4
+    ],
+    [
+      0.8,
+      0.75,
+      0.4
+    ]
+  ],
+  "width_depth_height_m": [
+    1.6,
+    0.8,
+    0.75
+  ],
+  "origin": [
+    0,
+    0,
+    0
+  ],
+  "up": "+Y",
+  "front": "+Z",
+  "closed_parts_outward_winding_positive_volume": true,
+  "glb_roundtrip_bounds_and_part_count": "PASS",
+  "external_textures_or_buffers": "none",
+  "godot_runtime": "NOT RUN: Godot unavailable",
+  "file_bytes": 27088
+}
