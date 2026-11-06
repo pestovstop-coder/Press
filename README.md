@@ -28,6 +28,7 @@ Blender используется для создания моделей. В Godo
 - [Визуальное направление](docs/ART_DIRECTION.md)
 - [Архитектура](docs/ARCHITECTURE.md)
 - [Пайплайн 3D-ассетов](docs/ASSET_PIPELINE.md)
+- [Бюджет производительности и технические ограничения](docs/PERFORMANCE_BUDGET.md)
 - [Первый визуальный прототип](docs/PROTOTYPE_01.md)
 - [План разработки](docs/ROADMAP.md)
 
