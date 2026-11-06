@@ -1,5 +1,7 @@
 extends Node3D
-## TASK 006: small two-asset editor. No collision/occupancy system or persistence.
+## TASK 007: explicit idle / placing / moving states. No collision/occupancy system or persistence.
+enum EditorState { IDLE, PLACING, MOVING }
+
 const STEP: float = 0.5
 const BLOCK_SIZE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const GRID_LIFT: float = 0.012
@@ -8,7 +10,8 @@ const DESK: PackedScene = preload("res://assets/models/furniture/desks/office_de
 var active: bool = false
 var quarter_turns: int = 0
 var valid_target: bool = false
-var selected_asset: String = "block"
+var state: EditorState = EditorState.IDLE
+var selected_asset: String = ""
 var grid: MeshInstance3D
 var preview: Node3D
 var placed: Node3D
@@ -35,12 +38,11 @@ func _ready() -> void:
 	var existing: Node3D = get_node("../TestRoom/OfficeDesk")
 	_register(existing, "office_desk")
 	_build_panel()
-	_new_preview()
 	set_active(false)
 
 
 func _process(_delta: float) -> void:
-	if active:
+	if active and state != EditorState.IDLE:
 		_update_preview(get_viewport().get_mouse_position())
 
 
@@ -60,12 +62,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if not active:
 					return
-				if editing != null:
-					cancel_move()
+				if state != EditorState.IDLE:
+					cancel_operation()
 				else:
 					set_active(false)
 			KEY_R:
-				if not active:
+				if not active or state == EditorState.IDLE:
 					return
 				quarter_turns = (quarter_turns + 1) % 4
 				preview.rotation.y = quarter_turns * PI / 2.0
@@ -84,36 +86,28 @@ func _unhandled_input(event: InputEvent) -> void:
 func click_at(screen_point: Vector2) -> void:
 	if not active or _over_panel(screen_point):
 		return
-	if editing == null:
+	if state == EditorState.IDLE:
 		var picked: Node3D = pick_object(screen_point)
 		if picked != null:
 			begin_move(picked)
-			return
+		return
 	_update_preview(screen_point)
 	place_block()
 
 
 func set_active(enabled: bool) -> void:
-	if editing != null:
-		cancel_move()
+	cancel_operation()
 	active = enabled
 	grid.visible = enabled
 	panel.visible = enabled
-	valid_target = false
-	preview.visible = false
-	if enabled:
-		quarter_turns = 0
-		preview.rotation.y = 0.0
-		_update_preview(get_viewport().get_mouse_position())
 
 
 func select_asset(asset_id: String) -> void:
-	if asset_id not in ["block", "office_desk"]:
+	if not active or asset_id not in ["block", "office_desk"]:
 		return
-	if editing != null:
-		cancel_move()
+	cancel_operation()
 	selected_asset = asset_id
-	_discard_preview()
+	state = EditorState.PLACING
 	_new_preview()
 	_update_preview(get_viewport().get_mouse_position())
 
@@ -145,9 +139,9 @@ func _register(object: Node3D, asset_id: String) -> void:
 
 
 func begin_move(object: Node3D) -> void:
-	if not active or editing != null or object not in editable:
+	if not active or state != EditorState.IDLE or object not in editable:
 		return
-	_discard_preview()
+	state = EditorState.MOVING
 	editing = object
 	valid_target = false
 	preview = object
@@ -158,16 +152,24 @@ func begin_move(object: Node3D) -> void:
 	status.text = "Перемещение · Esc — вернуть"
 
 
-func cancel_move() -> void:
-	if editing == null:
-		return
-	_restore_materials()
-	editing.global_transform = original_transform
-	editing.visible = true
-	editing = null
+func cancel_operation() -> void:
+	if state == EditorState.MOVING:
+		_restore_materials()
+		editing.global_transform = original_transform
+		editing.visible = true
+	elif state == EditorState.PLACING:
+		_discard_preview()
+	_reset_selection()
+
+
+func _reset_selection() -> void:
+	state = EditorState.IDLE
 	preview = null
-	_new_preview()
+	editing = null
+	selected_asset = ""
+	quarter_turns = 0
 	valid_target = false
+	status.text = "Ничего не выбрано"
 
 
 func snapped_floor_point(local_hit: Vector3) -> Vector3:
@@ -176,6 +178,8 @@ func snapped_floor_point(local_hit: Vector3) -> Vector3:
 
 func target_inside_floor(point: Vector3) -> bool:
 	# Only a floor-edge check, no furniture/wall collision or occupancy checks.
+	if preview == null:
+		return false
 	var bounds: AABB = preview.get_meta("bounds")
 	var rotated: AABB = (
 		Transform3D(Basis(Vector3.UP, quarter_turns * PI / 2.0), Vector3.ZERO) * bounds
@@ -190,6 +194,8 @@ func target_inside_floor(point: Vector3) -> bool:
 
 func _update_preview(screen_point: Vector2) -> void:
 	valid_target = false
+	if preview == null:
+		return
 	preview.visible = false
 	if not active or _over_panel(screen_point):
 		return
@@ -220,19 +226,18 @@ func _update_preview(screen_point: Vector2) -> void:
 
 func place_block() -> void:
 	# Retain the original public helper name for the smoke test; handles both assets.
-	if not active or not valid_target:
+	if not active or state == EditorState.IDLE or not valid_target:
 		return
-	if editing != null:
+	if state == EditorState.MOVING:
 		_restore_materials()
 		editing.visible = true
-		editing = null
-		preview = null
-		_new_preview()
 	else:
 		var object: Node3D = _make_block(false) if selected_asset == "block" else DESK.instantiate()
 		placed.add_child(object)
 		object.global_transform = preview.global_transform
 		_register(object, selected_asset)
+		_discard_preview()
+	_reset_selection()
 
 
 func pick_object(screen_point: Vector2) -> Node3D:
