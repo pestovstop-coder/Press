@@ -32,8 +32,8 @@ size = Vector3(1.6, 0.04, 0.4)
 background_mode = 1
 background_color = Color(0.1, 0.11, 0.13, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.65, 0.68, 0.72, 1)
-ambient_light_energy = 0.7
+ambient_light_color = Color(0.96, 0.95, 0.92, 1)
+ambient_light_energy = 0.45
 ambient_light_sky_contribution = 0.0
 
 [node name="Main" type="Node3D"]
@@ -42,9 +42,16 @@ ambient_light_sky_contribution = 0.0
 environment = SubResource("Environment_room")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
-transform = Transform3D(0.819152, -0.42625, 0.383798, 0, 0.669131, 0.743145, -0.573576, -0.608749, 0.54812, 0, 0, 0)
-light_color = Color(1, 0.98, 0.95, 1)
-light_energy = 1.6
+; Steep, restrained daylight: shorter shadows; one shadow-casting source only.
+rotation_degrees = Vector3(-65, -25, 0)
+light_color = Color(1, 0.99, 0.97, 1)
+light_energy = 0.7
+shadow_enabled = true
+shadow_bias = 0.03
+shadow_normal_bias = 0.5
+shadow_blur = 1.2
+directional_shadow_mode = 0
+directional_shadow_max_distance = 28.0
 
 [node name="TestRoom" type="Node3D" parent="."]
 
@@ -95,3 +102,39 @@ script = ExtResource("5_placement")
 
 [node name="OfficeDesk" parent="TestRoom" instance=ExtResource("6_desk")]
 position = Vector3(0, 0, 0)
+
+; Neutral-warm office fill, approximate 4000K impression (not calibrated CCT).
+; No fixture geometry, no omni shadow maps; four lights stay within GL limits.
+[node name="OfficeFill" type="Node3D" parent="."]
+
+[node name="PanelNW" type="OmniLight3D" parent="OfficeFill"]
+position = Vector3(-3, 2.8, -2.5)
+light_color = Color(1, 0.95, 0.88, 1)
+light_energy = 0.35
+omni_range = 7.0
+omni_attenuation = 1.5
+shadow_enabled = false
+
+[node name="PanelNE" type="OmniLight3D" parent="OfficeFill"]
+position = Vector3(3, 2.8, -2.5)
+light_color = Color(1, 0.95, 0.88, 1)
+light_energy = 0.35
+omni_range = 7.0
+omni_attenuation = 1.5
+shadow_enabled = false
+
+[node name="PanelSW" type="OmniLight3D" parent="OfficeFill"]
+position = Vector3(-3, 2.8, 2.5)
+light_color = Color(1, 0.95, 0.88, 1)
+light_energy = 0.35
+omni_range = 7.0
+omni_attenuation = 1.5
+shadow_enabled = false
+
+[node name="PanelSE" type="OmniLight3D" parent="OfficeFill"]
+position = Vector3(3, 2.8, 2.5)
+light_color = Color(1, 0.95, 0.88, 1)
+light_energy = 0.35
+omni_range = 7.0
+omni_attenuation = 1.5
+shadow_enabled = false

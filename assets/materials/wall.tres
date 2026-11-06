@@ -1,7 +1,7 @@
 [gd_resource type="StandardMaterial3D" format=3]
 
-; Neutral temporary material — walls. Replace freely when real assets arrive.
+; TASK 005: matte light grey-beige (#D4D0C5); no decorative texture.
 [resource]
-albedo_color = Color(0.82, 0.83, 0.85, 1)
-roughness = 0.9
+albedo_color = Color(0.831373, 0.815686, 0.772549, 1)
+roughness = 0.92
 metallic = 0.0
