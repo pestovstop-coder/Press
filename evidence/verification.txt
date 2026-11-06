@@ -1,0 +1,71 @@
+PRESS OFFICE TYCOON — TASK 001 / GODOT FOUNDATION: VERIFICATION LOG
+==========================================================================
+
+Engine        : [log] Godot Engine v4.7.2.stable.custom_build.3d95ead8f (2026-10-08 08:18:16 UTC) - https://godotengine.org
+Renderer      : [log] OpenGL API OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium)) - Compatibility - Using Device: WebKit - WebKit WebGL
+Build         : [log] Build configuration: Emscripten 4.0.14, single-threaded, no GDExtension support.
+Target project: res://scenes/main.tscn (project.godot / scenes / scripts / assets)
+CLI equivalent: godot --main-pack game.pck --print-fps   (web runtime used here)
+
+RUN ENVIRONMENT (important for reading the FPS numbers)
+--------------------------------------------------------------------------
+Headless Chromium 153 + ANGLE/SwiftShader = SOFTWARE WebGL2, no GPU.
+Godot 4.7.2 'gl_compatibility' renderer, 1920x1080 canvas, DPR 1.
+This is a CPU rasteriser, not target hardware; the low FPS is fill-rate
+limited, not scene-limited (6 boxes + 1 directional light + 1 environment).
+
+LAUNCH RESULT / ERRORS
+--------------------------------------------------------------------------
+Engine started, main scene loaded, no errors or warnings:
+  window.__errors = []
+  pageerror / failed requests = 0
+  console lines: 31 (mostly 'Project FPS' samples)
+
+  staged game.pck: 10376 bytes
+  Godot Engine v4.7.2.stable.custom_build.3d95ead8f (2026-10-08 08:18:16 UTC) - https://godotengine.org
+  Requested V-Sync mode: Enabled - FPS will likely be capped to the monitor refresh rate.
+  OpenGL API OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium)) - Compatibility - Using Device: WebKit - WebKit WebGL
+  Build configuration: Emscripten 4.0.14, single-threaded, no GDExtension support.
+
+FPS ON THE EMPTY TEST SCENE
+--------------------------------------------------------------------------
+1920x1080 (required measurement), Godot --print-fps, 25 s idle run:
+  per-second samples : 6, 6, 5, 6, 5, 5, 6, 6, 5, 5, 7, 5, 6, 5, 6, 5, 6, 4, 6, 6, 6, 5
+  stable (after warm-up): mean=5.50  median=6  min=4  max=7  n=18
+  all samples        : mean=5.55  median=6  min=4  max=7  n=22
+
+960x540 control run (4x fewer pixels) to identify the bottleneck:
+  samples            : 21, 21, 20, 22, 19, 22, 20, 22, 18, 19, 21, 20
+  stable             : mean=20.12  median=20  min=18  max=22  n=8
+  ~3.7x higher FPS at 1/4 the pixels -> software rasterisation is the limit.
+
+CAMERA STATE PROBES (diagnostics-only autoload in the VERIFICATION pack)
+--------------------------------------------------------------------------
+The delivered project contains NO probe code. A separate .pck with one
+print-only autoload was used to read CameraRig position / Camera3D size.
+
+  0 baseline                       pos=(0.000,0.000,0.000) size=14.000 rot=(-35.264,45.000,0.000) fps=7
+  1 after W pan                    pos=(-2.809,0.000,-2.809) size=14.000 rot=(-35.264,45.000,0.000) fps=7
+  2 after D pan                    pos=(0.594,0.000,-5.000) size=14.000 rot=(-35.264,45.000,0.000) fps=6
+  3 after middle-drag pan          pos=(-1.318,0.000,-4.265) size=14.000 rot=(-35.264,45.000,0.000) fps=6
+  4 after Home reset               pos=(0.000,0.000,0.000) size=14.000 rot=(-35.264,45.000,0.000) fps=5
+  5 zoom IN x12 (min clamp)        pos=(0.000,0.000,0.000) size=6.000 rot=(-35.264,45.000,0.000) fps=3
+  6 zoom OUT x30 (max clamp)       pos=(0.000,0.000,0.000) size=26.000 rot=(-35.264,45.000,0.000) fps=10
+  7 after Home reset again         pos=(0.000,0.000,0.000) size=14.000 rot=(-35.264,45.000,0.000) fps=9
+  8 long W pan (pan clamp)         pos=(-5.000,0.000,-5.000) size=14.000 rot=(-35.264,45.000,0.000) fps=6
+  9 final reset                    pos=(0.000,0.000,0.000) size=14.000 rot=(-35.264,45.000,0.000) fps=6
+
+  rotation is (-35.264, 45, 0) in every sample: isometric angle is stable.
+  zoom clamps exactly at size 6.000 and 26.000; pan clamps at +/-5 on X/Z.
+  Home restores pos (0,0,0) / size 14.000 exactly.
+  verification run errors: []
+
+VISUAL PROOF
+--------------------------------------------------------------------------
+  screenshot.png     1920x1080, clean frame, no overlay, exact delivered build
+  camera_control.mp4 4.5 s, 36 real Godot screenshots, 1280x720 H.264
+  Captions in the video are documentation overlays added after capture;
+  they are NOT UI inside the Godot project.
+  The frame after 'Home' is pixel-identical to the first frame (diff 0.0).
+
+FILES IN evidence/: screenshot.png, camera_control.mp4, launch_log.txt, verification.txt

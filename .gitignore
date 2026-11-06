@@ -1,0 +1,20 @@
+# Godot 4 generated / local files
+.godot/
+import/
+export/
+export_presets.cfg
+*.translation
+.mono/
+mono_crash.*.json
+logs/
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python / node scratch (verification tooling is kept outside the repository)
+__pycache__/
+node_modules/

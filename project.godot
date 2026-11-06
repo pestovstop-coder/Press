@@ -1,0 +1,26 @@
+; Press Office Tycoon — Task 001: Godot 4 technical foundation.
+; Engine: Godot 4.7.x, GDScript, GL Compatibility renderer.
+; Main scene contains only a primitive test room, a fixed isometric camera rig
+; and neutral lighting. No gameplay, no UI, no plugins.
+
+config_version=5
+
+[application]
+
+config/name="Press Office Tycoon"
+config/description="Godot 4 foundation: empty 3D test room and isometric camera."
+config/version="0.0.1"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/resizable=true
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method.web="gl_compatibility"

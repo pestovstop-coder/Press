@@ -1,0 +1,7 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+; Neutral temporary material — floor. Replace freely when real assets arrive.
+[resource]
+albedo_color = Color(0.68, 0.70, 0.72, 1)
+roughness = 0.95
+metallic = 0.0

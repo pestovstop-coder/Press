@@ -1,0 +1,7 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+; Neutral temporary material — walls. Replace freely when real assets arrive.
+[resource]
+albedo_color = Color(0.82, 0.83, 0.85, 1)
+roughness = 0.9
+metallic = 0.0

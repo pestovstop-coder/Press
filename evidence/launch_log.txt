@@ -1,0 +1,31 @@
+[log] staged game.pck: 10376 bytes
+[log] Godot Engine v4.7.2.stable.custom_build.3d95ead8f (2026-10-08 08:18:16 UTC) - https://godotengine.org
+[log] Requested V-Sync mode: Enabled - FPS will likely be capped to the monitor refresh rate.
+[log] OpenGL API OpenGL ES 3.0 (WebGL 2.0 (OpenGL ES 3.0 Chromium)) - Compatibility - Using Device: WebKit - WebKit WebGL
+[log] Build configuration: Emscripten 4.0.14, single-threaded, no GDExtension support.
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 7 (142.85 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 4 (250.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 5 (200.00 mspf)
+[log] Project FPS: 6 (166.66 mspf)
+[log] Project FPS: 4 (250.00 mspf)
+[log] Project FPS: 4 (250.00 mspf)
+[log] Project FPS: 4 (250.00 mspf)
