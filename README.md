@@ -30,6 +30,7 @@ Blender используется для создания моделей. В Godo
 - [Пайплайн 3D-ассетов](docs/ASSET_PIPELINE.md)
 - [Бюджет производительности и технические ограничения](docs/PERFORMANCE_BUDGET.md)
 - [Первый визуальный прототип](docs/PROTOTYPE_01.md)
+- [TASK 002 — масштаб, сетка и импорт ассетов](docs/TASK_002_WORLD_SCALE_AND_ASSET_IMPORT.md)
 - [План разработки](docs/ROADMAP.md)
 
 ## Принцип разработки
