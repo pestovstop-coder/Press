@@ -1,6 +1,6 @@
 extends SceneTree
-## Run: godot --headless --path . --script res://tests/placement_smoke.gd
-## This loads the delivered scene; no mock controller or replacement geometry.
+## godot --headless --path . --script res://tests/placement_smoke.gd
+## Real scene and imported GLB. Handler tests, not a visual/GUI acceptance test.
 var failures: int = 0
 
 
@@ -23,85 +23,148 @@ func key(controller: Node, code: Key) -> void:
 	controller._unhandled_input(event)
 
 
+func click(controller: Node, position: Vector2) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	event.position = position
+	controller._unhandled_input(event)
+
+
 func _run() -> void:
+	root.size = Vector2i(1280, 720)
 	var scene: Node = load("res://scenes/main.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
-	var controller: Node = scene.get_node("PlacementController")
+	var c: Node = scene.get_node("PlacementController")
 	var rig: Node3D = scene.get_node("CameraRig")
 	var camera: Camera3D = rig.get_node("Camera3D")
-	check(
-		not controller.active and not controller.grid.visible and not controller.preview.visible,
-		"normal mode hides grid and preview"
-	)
-	check(
-		controller.floor_bounds.size.is_equal_approx(Vector3(12, 0.2, 10)),
-		"bounds derived from original 12 x 10 metre floor"
-	)
-	key(controller, KEY_B)
-	check(controller.active and controller.grid.visible, "B enables placement/grid")
+	var original_desk: Node3D = scene.get_node("TestRoom/OfficeDesk")
 	var camera_before: Transform3D = rig.global_transform
-	for point in [Vector3(0.24, 0, 0.26), Vector3(-1.26, 0, 1.24), Vector3(2, 0, -1)]:
-		var screen_point: Vector2 = camera.unproject_position(point)
-		controller._update_preview(screen_point)
-		var expected: Vector3 = controller.floor_mesh.to_global(
-			controller.snapped_floor_point(controller.floor_mesh.to_local(point))
-		)
+	check(
+		not c.active and not c.grid.visible and not c.panel.visible and not c.preview.visible,
+		"normal mode hides editor/grid/preview"
+	)
+	check(c.editable.has(original_desk), "existing room desk is editable")
+	key(c, KEY_B)
+	check(c.active and c.panel.visible and c.grid.visible, "B opens editor and grid")
+	var block_screen: Vector2 = camera.unproject_position(Vector3(2.24, 0, 2.26))
+	c._update_preview(block_screen)
+	check(
+		c.valid_target and c.preview.global_position.is_equal_approx(Vector3(2, 0, 2.5)),
+		"block preview follows cursor at 0.5m step on floor"
+	)
+	click(c, block_screen)
+	check(c.placed.get_child_count() == 1, "LMB places block")
+	var block: Node3D = c.placed.get_child(0)
+	check(block.get_meta("asset_id") == "block", "block asset recorded")
+	c.select_asset("office_desk")
+	var bounds: AABB = c.preview.get_meta("bounds")
+	check(bounds.size.is_equal_approx(Vector3(1.6, 0.75, 0.8)), "desk bounds from imported meshes")
+	check(c.ghost_records.size() == 9, "all nine desk meshes are preview ghosts")
+	var desk_screen: Vector2 = camera.unproject_position(Vector3(-2, 0, 2))
+	c._update_preview(desk_screen)
+	click(c, desk_screen)
+	check(c.placed.get_child_count() == 2, "LMB places imported desk")
+	var desk: Node3D = c.placed.get_child(1)
+	check(
+		desk.get_meta("asset_id") == "office_desk" and is_zero_approx(desk.position.y),
+		"desk asset and origin rest on floor"
+	)
+	# Exercise actual UI button connection without requiring pointer/window automation.
+	var column: Node = c.panel.get_child(0)
+	column.get_child(1).emit_signal("pressed")
+	check(c.selected_asset == "block", "block UI button selects block")
+	column.get_child(2).emit_signal("pressed")
+	check(c.selected_asset == "office_desk", "desk UI button selects desk")
+	# Per-mesh picking selects the existing desk top rather than empty space between legs.
+	var pick_screen: Vector2 = camera.unproject_position(Vector3(0, 0.75, 0))
+	check(c.pick_object(pick_screen) == original_desk, "ray picks existing desk top")
+	var initial: Transform3D = original_desk.global_transform
+	click(c, pick_screen)
+	check(
+		c.editing == original_desk and c.preview == original_desk,
+		"LMB begins moving the original object, not a duplicate"
+	)
+	var destination: Vector2 = camera.unproject_position(Vector3(1.26, 0, -1.26))
+	c._update_preview(destination)
+	# R also reprojects using the live cursor; restore our test point afterwards.
+	key(c, KEY_R)
+	c._update_preview(destination)
+	check(
+		c.quarter_turns == 1 and is_equal_approx(original_desk.rotation.y, PI / 2),
+		"R rotates moved desk by 90 degrees"
+	)
+	check(
+		original_desk.global_position.is_equal_approx(Vector3(1.5, 0, -1.5)),
+		"moved desk snaps and stays on floor"
+	)
+	key(c, KEY_ESCAPE)
+	check(
+		c.editing == null and c.active and original_desk.global_transform.is_equal_approx(initial),
+		"Escape rolls back position/rotation and keeps editor open"
+	)
+	check(original_desk.visible, "cancelled desk visible")
+	for mesh: MeshInstance3D in c._meshes(original_desk):
 		check(
-			(
-				controller.valid_target
-				and controller.preview.global_position.is_equal_approx(expected)
-			),
-			"mouse ray follows floor and snaps: " + str(point)
+			mesh.get_surface_override_material(0) == null,
+			"cancel restores imported material, removes ghost override"
 		)
-		var click := InputEventMouseButton.new()
-		click.button_index = MOUSE_BUTTON_LEFT
-		click.pressed = true
-		click.position = screen_point
-		controller._unhandled_input(click)
-	check(controller.placed.get_child_count() == 3, "three LMB clicks place three blocks")
-	check(rig.global_transform.is_equal_approx(camera_before), "placement does not move camera")
-	for block: Node3D in controller.placed.get_children():
-		check(is_zero_approx(block.global_position.y), "block base contacts floor at world Y=0")
-	key(controller, KEY_R)
+	c.begin_move(original_desk)
+	c._update_preview(destination)
+	key(c, KEY_R)
+	c._update_preview(destination)
+	click(c, destination)
 	check(
-		controller.quarter_turns == 1 and is_equal_approx(controller.preview.rotation.y, PI / 2),
-		"R rotates preview by 90 degrees"
+		(
+			c.editing == null
+			and original_desk.visible
+			and original_desk.global_position.is_equal_approx(Vector3(1.5, 0, -1.5))
+			and is_equal_approx(original_desk.rotation.y, PI / 2)
+		),
+		"LMB commits moved/rotated desk"
 	)
-	controller.place_block()
-	var rotated: Node3D = controller.placed.get_child(3)
-	check(is_equal_approx(rotated.rotation.y, PI / 2), "confirmed block retains rotation")
-	for i in range(3):
-		key(controller, KEY_R)
-	check(controller.quarter_turns == 0, "four quarter-turns return to initial orientation")
+	check(c.placed.get_child_count() == 2, "moving does not create duplicates")
+	c.begin_move(block)
+	c._update_preview(destination)
+	key(c, KEY_B)
 	check(
-		controller.target_inside_floor(Vector3(5.5, controller.floor_top, 4.5)),
-		"footprint fits at floor edge"
+		(
+			not c.active
+			and c.editing == null
+			and block.global_position.is_equal_approx(Vector3(2, 0, 2.5))
+		),
+		"B exits and rolls back pending block move"
 	)
 	check(
-		not controller.target_inside_floor(Vector3(6, controller.floor_top, 5)),
-		"footprint extending outside floor is rejected"
+		not c.preview.visible and not c.panel.visible and not c.grid.visible,
+		"exit hides all editor visuals"
 	)
-	controller._update_preview(camera.unproject_position(Vector3(20, 0, 20)))
+	key(c, KEY_B)
+	c.select_asset("office_desk")
+	c.quarter_turns = 0
+	check(not c.target_inside_floor(Vector3(5.5, c.floor_top, 0)), "1.6m desk respects X edge")
+	c.quarter_turns = 1
 	check(
-		not controller.valid_target and not controller.preview.visible,
-		"outside floor hides preview"
+		c.target_inside_floor(Vector3(5.5, c.floor_top, 0)), "rotated 0.8m depth fits same X edge"
 	)
-	controller.place_block()
-	check(controller.placed.get_child_count() == 4, "invalid target does not place")
-	key(controller, KEY_ESCAPE)
+	var count: int = c.placed.get_child_count()
+	click(c, c.panel.position + Vector2(5, 5))
+	check(c.placed.get_child_count() == count, "panel clicks do not place objects")
+	var middle := InputEventMouseButton.new()
+	middle.button_index = MOUSE_BUTTON_MIDDLE
+	middle.pressed = true
+	Input.parse_input_event(middle)
+	click(c, camera.unproject_position(Vector3(-3, 0, -2)))
 	check(
-		not controller.active and not controller.grid.visible and not controller.preview.visible,
-		"Escape exits placement and hides grid/preview"
+		c.placed.get_child_count() == count and c.editing == null, "MMB blocks confirmation/picking"
 	)
-	controller.place_block()
+	middle.pressed = false
+	Input.parse_input_event(middle)
+	key(c, KEY_ESCAPE)
 	check(
-		controller.placed.get_child_count() == 4,
-		"cancel preserves existing blocks and prevents new ones"
+		not c.active and rig.global_transform.is_equal_approx(camera_before),
+		"Escape exits; placement did not move camera"
 	)
-	key(controller, KEY_B)
-	check(controller.active and controller.quarter_turns == 0, "placement can be restarted")
-	key(controller, KEY_B)
-	check(not controller.active, "B toggles placement off")
 	print("Placement smoke test failures: ", failures)
 	quit(0 if failures == 0 else 1)

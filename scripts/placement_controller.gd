@@ -1,18 +1,25 @@
 extends Node3D
-## TASK 002 / Stage 1 only. World units are metres; placement uses floor-local XZ.
-## Blender front -Y maps to Godot +Z (Blender +Z maps to Godot +Y).
+## TASK 006: small two-asset editor. No collision/occupancy system or persistence.
 const STEP: float = 0.5
 const BLOCK_SIZE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const GRID_LIFT: float = 0.012
+const DESK: PackedScene = preload("res://assets/models/furniture/desks/office_desk.glb")
 
 var active: bool = false
 var quarter_turns: int = 0
 var valid_target: bool = false
+var selected_asset: String = "block"
 var grid: MeshInstance3D
 var preview: Node3D
 var placed: Node3D
 var floor_top: float
 var floor_bounds: AABB
+var editing: Node3D
+var original_transform: Transform3D
+var editable: Array[Node3D] = []
+var ghost_records: Dictionary = {}
+var panel: PanelContainer
+var status: Label
 
 @onready var floor_mesh: MeshInstance3D = get_node("../TestRoom/Floor")
 @onready var camera: Camera3D = get_node("../CameraRig/Camera3D")
@@ -22,18 +29,27 @@ func _ready() -> void:
 	floor_bounds = floor_mesh.mesh.get_aabb()
 	floor_top = floor_bounds.end.y
 	_build_grid()
-	preview = _make_block(true)
-	add_child(preview)
 	placed = Node3D.new()
-	placed.name = "PlacedBlocks"
+	placed.name = "PlacedObjects"
 	add_child(placed)
+	var existing: Node3D = get_node("../TestRoom/OfficeDesk")
+	_register(existing, "office_desk")
+	_build_panel()
+	_new_preview()
 	set_active(false)
 
 
 func _process(_delta: float) -> void:
-	# Reproject every frame, including when the camera pans/zooms without mouse motion.
 	if active:
 		_update_preview(get_viewport().get_mouse_position())
+
+
+func _input(event: InputEvent) -> void:
+	# GUI may swallow a release over the panel. Always end a camera MMB drag,
+	# otherwise the unchanged camera's _dragging flag could remain stuck.
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_MIDDLE and not event.pressed:
+			camera.get_parent()._unhandled_input(event)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -44,29 +60,45 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				if not active:
 					return
-				set_active(false)
+				if editing != null:
+					cancel_move()
+				else:
+					set_active(false)
 			KEY_R:
 				if not active:
 					return
 				quarter_turns = (quarter_turns + 1) % 4
 				preview.rotation.y = quarter_turns * PI / 2.0
+				_update_preview(get_viewport().get_mouse_position())
 			_:
 				return
 		get_viewport().set_input_as_handled()
 	elif active and event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed:
-				_update_preview(event.position)
-				# MMB remains camera-only: do not confirm while panning.
-				if not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
-					place_block()
+			if event.pressed and not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+				click_at(event.position)
 			get_viewport().set_input_as_handled()
-	# Motion is not consumed: the camera only pans with MMB, never with LMB.
+	# MMB/motion/wheel go to the unchanged camera controller.
+
+
+func click_at(screen_point: Vector2) -> void:
+	if not active or _over_panel(screen_point):
+		return
+	if editing == null:
+		var picked: Node3D = pick_object(screen_point)
+		if picked != null:
+			begin_move(picked)
+			return
+	_update_preview(screen_point)
+	place_block()
 
 
 func set_active(enabled: bool) -> void:
+	if editing != null:
+		cancel_move()
 	active = enabled
 	grid.visible = enabled
+	panel.visible = enabled
 	valid_target = false
 	preview.visible = false
 	if enabled:
@@ -75,34 +107,102 @@ func set_active(enabled: bool) -> void:
 		_update_preview(get_viewport().get_mouse_position())
 
 
+func select_asset(asset_id: String) -> void:
+	if asset_id not in ["block", "office_desk"]:
+		return
+	if editing != null:
+		cancel_move()
+	selected_asset = asset_id
+	_discard_preview()
+	_new_preview()
+	_update_preview(get_viewport().get_mouse_position())
+
+
+func _new_preview() -> void:
+	valid_target = false
+	preview = _make_block(false) if selected_asset == "block" else DESK.instantiate()
+	preview.name = "PlacementPreview"
+	add_child(preview)
+	preview.set_meta("asset_id", selected_asset)
+	preview.set_meta("bounds", _object_bounds(preview))
+	quarter_turns = 0
+	_set_ghost(preview)
+	preview.visible = false
+	status.text = "Блок" if selected_asset == "block" else "Офисный стол"
+
+
+func _discard_preview() -> void:
+	_restore_materials()
+	if is_instance_valid(preview):
+		preview.visible = false
+		preview.queue_free()
+
+
+func _register(object: Node3D, asset_id: String) -> void:
+	object.set_meta("asset_id", asset_id)
+	object.set_meta("bounds", _object_bounds(object))
+	editable.append(object)
+
+
+func begin_move(object: Node3D) -> void:
+	if not active or editing != null or object not in editable:
+		return
+	_discard_preview()
+	editing = object
+	valid_target = false
+	preview = object
+	original_transform = object.global_transform
+	selected_asset = str(object.get_meta("asset_id"))
+	quarter_turns = posmod(roundi(object.rotation.y / (PI / 2.0)), 4)
+	_set_ghost(object)
+	status.text = "Перемещение · Esc — вернуть"
+
+
+func cancel_move() -> void:
+	if editing == null:
+		return
+	_restore_materials()
+	editing.global_transform = original_transform
+	editing.visible = true
+	editing = null
+	preview = null
+	_new_preview()
+	valid_target = false
+
+
 func snapped_floor_point(local_hit: Vector3) -> Vector3:
 	return Vector3(snappedf(local_hit.x, STEP), floor_top, snappedf(local_hit.z, STEP))
 
 
 func target_inside_floor(point: Vector3) -> bool:
-	var half: Vector3 = BLOCK_SIZE * 0.5
+	# Only a floor-edge check, no furniture/wall collision or occupancy checks.
+	var bounds: AABB = preview.get_meta("bounds")
+	var rotated: AABB = (
+		Transform3D(Basis(Vector3.UP, quarter_turns * PI / 2.0), Vector3.ZERO) * bounds
+	)
 	return (
-		point.x - half.x >= floor_bounds.position.x
-		and point.x + half.x <= floor_bounds.end.x
-		and point.z - half.z >= floor_bounds.position.z
-		and point.z + half.z <= floor_bounds.end.z
+		point.x + rotated.position.x >= floor_bounds.position.x
+		and point.x + rotated.end.x <= floor_bounds.end.x
+		and point.z + rotated.position.z >= floor_bounds.position.z
+		and point.z + rotated.end.z <= floor_bounds.end.z
 	)
 
 
 func _update_preview(screen_point: Vector2) -> void:
+	valid_target = false
+	preview.visible = false
+	if not active or _over_panel(screen_point):
+		return
 	var origin: Vector3 = floor_mesh.to_local(camera.project_ray_origin(screen_point))
 	var direction: Vector3 = (
 		floor_mesh.global_basis.inverse() * camera.project_ray_normal(screen_point)
 	)
-	valid_target = false
-	preview.visible = false
 	if absf(direction.y) < 0.00001:
 		return
 	var distance: float = (floor_top - origin.y) / direction.y
 	if distance < 0.0:
 		return
 	var hit: Vector3 = origin + direction * distance
-	# Do not snap a point outside the physical floor back into the room.
 	if (
 		hit.x < floor_bounds.position.x
 		or hit.x > floor_bounds.end.x
@@ -113,15 +213,127 @@ func _update_preview(screen_point: Vector2) -> void:
 	var point: Vector3 = snapped_floor_point(hit)
 	valid_target = target_inside_floor(point)
 	preview.visible = valid_target
+	var bounds: AABB = preview.get_meta("bounds")
+	point.y -= bounds.position.y
 	preview.global_position = floor_mesh.to_global(point)
 
 
 func place_block() -> void:
+	# Retain the original public helper name for the smoke test; handles both assets.
 	if not active or not valid_target:
 		return
-	var block: Node3D = _make_block(false)
-	placed.add_child(block)
-	block.global_transform = preview.global_transform
+	if editing != null:
+		_restore_materials()
+		editing.visible = true
+		editing = null
+		preview = null
+		_new_preview()
+	else:
+		var object: Node3D = _make_block(false) if selected_asset == "block" else DESK.instantiate()
+		placed.add_child(object)
+		object.global_transform = preview.global_transform
+		_register(object, selected_asset)
+
+
+func pick_object(screen_point: Vector2) -> Node3D:
+	var origin: Vector3 = camera.project_ray_origin(screen_point)
+	var direction: Vector3 = camera.project_ray_normal(screen_point)
+	var nearest: float = INF
+	var result: Node3D
+	for object in editable:
+		for mesh in _meshes(object):
+			# Ray against each visible mesh AABB, not one solid box around the desk.
+			# No physics bodies are created; gaps between legs remain selectable-through.
+			var local_origin: Vector3 = mesh.to_local(origin)
+			var local_direction: Vector3 = mesh.global_basis.inverse() * direction
+			var hit: Variant = mesh.get_aabb().intersects_ray(local_origin, local_direction)
+			if hit is Vector3:
+				var distance: float = origin.distance_to(mesh.to_global(hit))
+				if distance < nearest:
+					nearest = distance
+					result = object
+	return result
+
+
+func _meshes(object: Node) -> Array[MeshInstance3D]:
+	var result: Array[MeshInstance3D] = []
+	if object is MeshInstance3D and object.mesh != null:
+		result.append(object)
+	for child in object.get_children():
+		result.append_array(_meshes(child))
+	return result
+
+
+func _object_bounds(object: Node3D) -> AABB:
+	var bounds := AABB()
+	var first: bool = true
+	for mesh in _meshes(object):
+		var relative: Transform3D = object.global_transform.affine_inverse() * mesh.global_transform
+		var box: AABB = relative * mesh.get_aabb()
+		bounds = box if first else bounds.merge(box)
+		first = false
+	return bounds
+
+
+func _set_ghost(object: Node3D) -> void:
+	for mesh in _meshes(object):
+		var surfaces: Array[Material] = []
+		for index in range(mesh.mesh.get_surface_count()):
+			surfaces.append(mesh.get_surface_override_material(index))
+		ghost_records[mesh] = [mesh.material_override, surfaces, mesh.cast_shadow]
+		# Duplicate active materials: never mutate the imported GLB/shared resources.
+		var materials: Array[Material] = []
+		for index in range(mesh.mesh.get_surface_count()):
+			materials.append(mesh.get_active_material(index))
+		mesh.material_override = null
+		for index in range(materials.size()):
+			var material: StandardMaterial3D
+			if materials[index] is StandardMaterial3D:
+				material = materials[index].duplicate() as StandardMaterial3D
+			else:
+				material = StandardMaterial3D.new()
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			material.albedo_color.a = 0.38
+			mesh.set_surface_override_material(index, material)
+		mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+func _restore_materials() -> void:
+	for mesh: MeshInstance3D in ghost_records:
+		var saved: Array = ghost_records[mesh]
+		mesh.material_override = saved[0]
+		for index in range(saved[1].size()):
+			mesh.set_surface_override_material(index, saved[1][index])
+		mesh.cast_shadow = saved[2]
+	ghost_records.clear()
+
+
+func _over_panel(point: Vector2) -> bool:
+	return panel.visible and panel.get_global_rect().has_point(point)
+
+
+func _build_panel() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	panel = PanelContainer.new()
+	panel.position = Vector2(16, 16)
+	layer.add_child(panel)
+	var column := VBoxContainer.new()
+	panel.add_child(column)
+	var title := Label.new()
+	title.text = "Расстановка · B — выход"
+	column.add_child(title)
+	for asset_id in ["block", "office_desk"]:
+		var button := Button.new()
+		button.text = "Блок 1×1×1 м" if asset_id == "block" else "Офисный стол 1,6×0,8 м"
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(select_asset.bind(asset_id))
+		column.add_child(button)
+	status = Label.new()
+	column.add_child(status)
+	var help := Label.new()
+	help.text = "ЛКМ: выбрать / поставить\nR: 90° · Esc: отменить / выйти"
+	column.add_child(help)
 
 
 func _material(color: Color) -> StandardMaterial3D:
