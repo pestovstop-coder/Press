@@ -25,6 +25,7 @@ Blender используется для создания моделей. В Godo
 - [GDD](docs/GDD.md)
 - [Игровой цикл](docs/CORE_LOOP.md)
 - [Редакционная система, внешние СМИ и сюжетные линии](docs/EDITORIAL_SYSTEM_AND_STORYLINES.md)
+- [Будущие системы и опыт рабочего места директора](docs/FUTURE_SYSTEMS_AND_OFFICE_EXPERIENCE.md) — концептуальные идеи, не задачи на немедленную реализацию.
 - [Системы](docs/SYSTEMS.md)
 - [Визуальное направление](docs/ART_DIRECTION.md)
 - [Архитектура](docs/ARCHITECTURE.md)
