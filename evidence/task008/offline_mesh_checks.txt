@@ -1,0 +1,8 @@
+Offline GLB triangle-data checks (Python, NOT Godot runtime)
+Triangles: 396
+PASS: top: nearest ray distance 2.250000
+PASS: side: nearest ray distance 2.200000
+PASS: opposite side: nearest ray distance 2.200000
+PASS: front: nearest ray distance 2.600000
+PASS: gap between legs: nearest ray distance inf
+This confirms the GLB has selectable top/side triangles, not the execution of GDScript.

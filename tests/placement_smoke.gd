@@ -25,11 +25,12 @@ func key(controller: Node, code: Key) -> void:
 	controller._unhandled_input(event)
 
 
-func click(controller: Node, position: Vector2) -> void:
+func click(controller: Node, position: Vector2, ctrl: bool = false) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
 	event.pressed = true
 	event.position = position
+	event.ctrl_pressed = ctrl
 	controller._unhandled_input(event)
 
 
@@ -263,5 +264,158 @@ func _run() -> void:
 		not c.active and rig.global_transform.is_equal_approx(camera_before),
 		"idle Escape exits; editing has not moved camera"
 	)
+	await _test_task008(c, original_desk, camera)
 	print("Placement smoke test failures: ", failures)
 	quit(0 if failures == 0 else 1)
+
+
+func gui_click(button: Button, local_point: Vector2) -> void:
+	# Actual Viewport GUI routing, not signal emission or manual rectangle dispatch.
+	var point: Vector2 = button.get_global_transform_with_canvas() * local_point
+	var motion := InputEventMouseMotion.new()
+	motion.position = point
+	root.push_input(motion, true)
+	for pressed in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.position = point
+		event.pressed = pressed
+		event.button_mask = MOUSE_BUTTON_MASK_LEFT if pressed else 0
+		root.push_input(event, true)
+
+
+func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
+	c.set_active(true)
+	await process_frame
+	await process_frame
+	var column: Node = c.panel.get_child(0)
+	var block_button: Button = column.get_child(1)
+	var desk_button: Button = column.get_child(2)
+	var count: int = c.placed.get_child_count()
+	gui_click(block_button, block_button.size / 2.0)
+	check(
+		c.selected_asset == "block" and c.state == Placement.EditorState.PLACING,
+		"GUI click directly on centered button text selects block"
+	)
+	check(c.placed.get_child_count() == count, "GUI click does not place furniture")
+	key(c, KEY_ESCAPE)
+	gui_click(desk_button, Vector2(8, desk_button.size.y / 2.0))
+	check(c.selected_asset == "office_desk", "GUI click in button padding selects desk")
+	key(c, KEY_ESCAPE)
+	for point in [
+		Vector2(6, 6),
+		desk_button.size - Vector2(6, 6),
+		Vector2(desk_button.size.x - 6, 6),
+		Vector2(6, desk_button.size.y - 6)
+	]:
+		gui_click(desk_button, point)
+		check(
+			c.selected_asset == "office_desk", "GUI hit covers entire visible button, not only text"
+		)
+		key(c, KEY_ESCAPE)
+	# CanvasLayer offset/scale and smaller viewport must share drawing/hit coordinates.
+	var layer: CanvasLayer = c.panel.get_parent()
+	var saved_transform: Transform2D = layer.transform
+	layer.transform = Transform2D(0, Vector2(24, 12)).scaled_local(Vector2(1.25, 1.25))
+	root.size = Vector2i(960, 540)
+	await process_frame
+	gui_click(desk_button, desk_button.size / 2.0)
+	check(
+		c.selected_asset == "office_desk", "GUI text hit works with canvas offset/scale and resize"
+	)
+	var panel_point: Vector2 = (
+		desk_button.get_global_transform_with_canvas() * (desk_button.size / 2.0)
+	)
+	check(c._over_panel(panel_point), "panel guard uses viewport-to-local transform")
+	key(c, KEY_ESCAPE)
+	layer.transform = saved_transform
+	root.size = Vector2i(1280, 720)
+	await process_frame
+	# Selection independent of face/camera direction, plus real wall occlusion.
+	var top: Vector3 = desk.to_global(Vector3(0, 3, 0))
+	check(
+		c._pick_ray(top, desk.global_basis * Vector3.DOWN) == desk,
+		"exact ray from above selects tabletop"
+	)
+	check(
+		c._pick_ray(desk.to_global(Vector3(3, 0.73, 0)), desk.global_basis * Vector3.LEFT) == desk,
+		"exact ray from side selects tabletop edge"
+	)
+	check(
+		c._pick_ray(desk.to_global(Vector3(0, -0.01, 0)), desk.global_basis * Vector3.UP) == null,
+		"floor occludes furniture when ray starts below floor"
+	)
+	check(
+		c._pick_ray(Vector3(-8, 0.73, desk.global_position.z), Vector3.RIGHT) == null,
+		"west wall blocks selection through wall"
+	)
+	check(
+		(
+			c._pick_ray(desk.to_global(Vector3(0, 0.3, 2)), desk.global_basis * Vector3.FORWARD)
+			!= desk
+		),
+		"ray through empty leg gap does not select neighboring triangles"
+	)
+	c.select_asset("office_desk")
+	var ghost: Node3D = c.preview
+	var new_desks: Array[Node3D] = []
+	for index in range(3):
+		if index == 1:
+			key(c, KEY_R)
+		var turns: int = c.quarter_turns
+		var point: Vector2 = camera.unproject_position(Vector3(3, 0, -3 + index * 3))
+		click(c, point, true)
+		check(c.placed.get_child_count() == count + index + 1, "Ctrl click adds independent desk")
+		var object: Node3D = c.placed.get_child(count + index)
+		new_desks.append(object)
+		check(
+			(
+				object != ghost
+				and c.editing == null
+				and c.preview == ghost
+				and c.state == Placement.EditorState.PLACING
+				and c.selected_asset == "office_desk"
+			),
+			"Ctrl keeps only independent preview active, not placed desk"
+		)
+		check(
+			c.quarter_turns == turns and is_equal_approx(object.rotation.y, turns * PI / 2),
+			"Ctrl preserves rotation including R between placements"
+		)
+		check(
+			materials_snapshot(c, object) == materials_snapshot(c, desk),
+			"Ctrl placed desk has original materials and shadows"
+		)
+	check(
+		new_desks[0] != new_desks[1] and new_desks[1] != new_desks[2],
+		"three distinct desk instances"
+	)
+	key(c, KEY_ESCAPE)
+	check_idle(c, "Esc cancels only repeat preview")
+	check(c.active and c.placed.get_child_count() == count + 3, "Esc preserves all Ctrl placements")
+	c.select_asset("office_desk")
+	click(c, camera.unproject_position(Vector3(-4, 0, 3)))
+	check_idle(c, "ordinary LMB still places one desk and removes preview")
+	var move: Node3D = new_desks[0]
+	var initial: Transform3D = move.global_transform
+	var materials: Array = materials_snapshot(c, move)
+	var total: int = c.placed.get_child_count()
+	c.begin_move(move)
+	key(c, KEY_R)
+	c._update_preview(camera.unproject_position(Vector3(2, 0, -3)))
+	key(c, KEY_ESCAPE)
+	check(
+		move.global_transform.is_equal_approx(initial) and materials_snapshot(c, move) == materials,
+		"move cancellation after Ctrl placement restores transform/materials/shadows"
+	)
+	c.begin_move(move)
+	click(c, camera.unproject_position(Vector3(2, 0, -3)), true)
+	check_idle(c, "Ctrl confirm in MOVING returns idle, never starts repeat placement")
+	check(
+		(
+			c.placed.get_child_count() == total
+			and move.global_position.is_equal_approx(Vector3(2, 0, -3))
+		),
+		"Ctrl MOVING confirms without cloning furniture"
+	)
+	key(c, KEY_ESCAPE)

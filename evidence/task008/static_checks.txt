@@ -1,0 +1,19 @@
+TASK 008 — static/offline verification only
+Base: 82005c929ba231be82ce1403d9d9e08e99263a98
+Branch: arena/a9200966-press
+
+PASS: gdtoolkit 4.5.0 gdparse scripts/*.gd tests/*.gd
+PASS: gdtoolkit gdlint scripts/placement_controller.gd tests/placement_smoke.gd
+      Success: no problems found
+PASS: git diff --check
+PASS: protected scenes/assets/project.godot/camera_controller.gd unchanged
+PASS: documentation links resolve
+PASS: Ctrl modifier forwarded from mouse event, repeat only in PLACING branch
+PASS: python3 tests/desk_ray_data_check.py (see offline_mesh_checks.txt)
+
+NOT RUN: Godot import, engine compilation, smoke test, GUI/runtime acceptance.
+Godot/godot4 executable not installed. Attempt to download Godot 4.7.2 from
+GitHub failed on release-assets.githubusercontent.com with curl (35)
+OpenSSL SSL_connect: SSL_ERROR_SYSCALL.
+No Godot screenshots or video. All 11 interaction scenarios still require
+runtime acceptance; source changes and offline math are not visual proof.

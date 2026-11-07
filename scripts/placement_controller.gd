@@ -1,5 +1,5 @@
 extends Node3D
-## TASK 007: explicit idle / placing / moving states. No collision/occupancy system or persistence.
+## TASK 008: precise picking and Ctrl-repeat, retaining IDLE / PLACING / MOVING.
 enum EditorState { IDLE, PLACING, MOVING }
 
 const STEP: float = 0.5
@@ -20,6 +20,8 @@ var floor_bounds: AABB
 var editing: Node3D
 var original_transform: Transform3D
 var editable: Array[Node3D] = []
+var room_occluders: Array[MeshInstance3D] = []
+var face_cache: Dictionary = {}
 var ghost_records: Dictionary = {}
 var panel: PanelContainer
 var status: Label
@@ -37,6 +39,9 @@ func _ready() -> void:
 	add_child(placed)
 	var existing: Node3D = get_node("../TestRoom/OfficeDesk")
 	_register(existing, "office_desk")
+	for mesh in _meshes(get_node("../TestRoom")):
+		if not existing.is_ancestor_of(mesh):
+			room_occluders.append(mesh)
 	_build_panel()
 	set_active(false)
 
@@ -78,12 +83,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif active and event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed and not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
-				click_at(event.position)
+				click_at(event.position, event.ctrl_pressed)
 			get_viewport().set_input_as_handled()
 	# MMB/motion/wheel go to the unchanged camera controller.
 
 
-func click_at(screen_point: Vector2) -> void:
+func click_at(screen_point: Vector2, keep_placing: bool = false) -> void:
 	if not active or _over_panel(screen_point):
 		return
 	if state == EditorState.IDLE:
@@ -92,7 +97,7 @@ func click_at(screen_point: Vector2) -> void:
 			begin_move(picked)
 		return
 	_update_preview(screen_point)
-	place_block()
+	place_block(keep_placing)
 
 
 func set_active(enabled: bool) -> void:
@@ -224,7 +229,7 @@ func _update_preview(screen_point: Vector2) -> void:
 	preview.global_position = floor_mesh.to_global(point)
 
 
-func place_block() -> void:
+func place_block(keep_placing: bool = false) -> void:
 	# Retain the original public helper name for the smoke test; handles both assets.
 	if not active or state == EditorState.IDLE or not valid_target:
 		return
@@ -236,28 +241,57 @@ func place_block() -> void:
 		placed.add_child(object)
 		object.global_transform = preview.global_transform
 		_register(object, selected_asset)
+		if keep_placing:
+			# Keep only the independent ghost, not the new furniture, active.
+			# Its model, position and quarter-turn remain unchanged.
+			return
 		_discard_preview()
 	_reset_selection()
 
 
 func pick_object(screen_point: Vector2) -> Node3D:
-	var origin: Vector3 = camera.project_ray_origin(screen_point)
-	var direction: Vector3 = camera.project_ray_normal(screen_point)
+	return _pick_ray(
+		camera.project_ray_origin(screen_point), camera.project_ray_normal(screen_point)
+	)
+
+
+func _pick_ray(origin: Vector3, direction: Vector3) -> Node3D:
 	var nearest: float = INF
 	var result: Node3D
+	# No physics bodies/layers/masks exist in this editor. Static room meshes
+	# occlude this visual ray without introducing placement collisions.
+	for mesh in room_occluders:
+		nearest = minf(nearest, _mesh_ray_distance(mesh, origin, direction))
 	for object in editable:
 		for mesh in _meshes(object):
-			# Ray against each visible mesh AABB, not one solid box around the desk.
-			# No physics bodies are created; gaps between legs remain selectable-through.
-			var local_origin: Vector3 = mesh.to_local(origin)
-			var local_direction: Vector3 = mesh.global_basis.inverse() * direction
-			var hit: Variant = mesh.get_aabb().intersects_ray(local_origin, local_direction)
-			if hit is Vector3:
-				var distance: float = origin.distance_to(mesh.to_global(hit))
-				if distance < nearest:
-					nearest = distance
-					result = object
+			var distance: float = _mesh_ray_distance(mesh, origin, direction)
+			if distance < nearest:
+				nearest = distance
+				result = object
 	return result
+
+
+func _mesh_ray_distance(mesh: MeshInstance3D, origin: Vector3, direction: Vector3) -> float:
+	if not mesh.is_visible_in_tree() or mesh.mesh == null:
+		return INF
+	if not face_cache.has(mesh.mesh):
+		face_cache[mesh.mesh] = mesh.mesh.get_faces()
+	var faces: PackedVector3Array = face_cache[mesh.mesh]
+	var local_origin: Vector3 = mesh.to_local(origin)
+	var local_direction: Vector3 = mesh.global_basis.inverse() * direction
+	var nearest: float = INF
+	for index in range(0, faces.size(), 3):
+		var hit: Variant = Geometry3D.ray_intersects_triangle(
+			local_origin, local_direction, faces[index], faces[index + 1], faces[index + 2]
+		)
+		# Explicitly accept either winding, including a view from above/below.
+		if hit == null:
+			hit = Geometry3D.ray_intersects_triangle(
+				local_origin, local_direction, faces[index + 2], faces[index + 1], faces[index]
+			)
+		if hit is Vector3:
+			nearest = minf(nearest, origin.distance_to(mesh.to_global(hit)))
+	return nearest
 
 
 func _meshes(object: Node) -> Array[MeshInstance3D]:
@@ -314,30 +348,42 @@ func _restore_materials() -> void:
 
 
 func _over_panel(point: Vector2) -> bool:
-	return panel.visible and panel.get_global_rect().has_point(point)
+	# Input positions are viewport coordinates; Control rects are local.
+	# Include CanvasLayer transforms rather than comparing unlike coordinate spaces.
+	var local_point: Vector2 = panel.get_global_transform_with_canvas().affine_inverse() * point
+	return panel.visible and Rect2(Vector2.ZERO, panel.size).has_point(local_point)
 
 
 func _build_panel() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	panel = PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	panel.position = Vector2(16, 16)
 	layer.add_child(panel)
 	var column := VBoxContainer.new()
+	column.mouse_filter = Control.MOUSE_FILTER_PASS
 	panel.add_child(column)
 	var title := Label.new()
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.text = "Расстановка · B — выход"
 	column.add_child(title)
 	for asset_id in ["block", "office_desk"]:
 		var button := Button.new()
 		button.text = "Блок 1×1×1 м" if asset_id == "block" else "Офисный стол 1,6×0,8 м"
+		# Native Button owns both text and hit-test: no separately offset label/rect.
+		button.custom_minimum_size = Vector2(260, 44)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.mouse_filter = Control.MOUSE_FILTER_STOP
 		button.focus_mode = Control.FOCUS_NONE
 		button.pressed.connect(select_asset.bind(asset_id))
 		column.add_child(button)
 	status = Label.new()
+	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	column.add_child(status)
 	var help := Label.new()
-	help.text = "ЛКМ: выбрать / поставить\nR: 90° · Esc: отменить / выйти"
+	help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	help.text = "ЛКМ: выбрать / поставить\nCtrl+ЛКМ: поставить ещё\nR: 90° · Esc: отменить / выйти"
 	column.add_child(help)
 
 
