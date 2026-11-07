@@ -435,18 +435,21 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 func _test_layout(c: Node, scene: Node) -> void:
 	var partition: MeshInstance3D = scene.get_node("TestRoom/SharedWall")
 	var walls: Node = scene.get_node("WallVisibility")
-	check(is_equal_approx(partition.get_aabb().size.y, 3.0), "TASK 011 partition is 3m")
+	check(walls.originals[partition]["size"].y == 3.0, "TASK 011.1 authored partition is 3m")
 	walls.update_visibility(Vector3(1, 0, 1))
+	walls.advance_heights(100.0)
 	check(
 		is_inf(c._mesh_ray_distance(partition, Vector3(-0.5, 1.2, -1), Vector3.RIGHT)),
-		"TASK 011 hidden partition does not occlude picking"
+		"TASK 011 lowered partition does not occlude picking above cut"
 	)
 	walls.update_visibility(Vector3(0, 0, 1))
+	walls.advance_heights(100.0)
 	check(
 		c._mesh_ray_distance(partition, Vector3(-0.5, 1.2, -1), Vector3.RIGHT) < 1.0,
-		"TASK 011 visible full partition still occludes picking"
+		"TASK 011 restored full partition still occludes picking"
 	)
 	walls.update_visibility(Vector3(1, 0, 1))
+	walls.advance_heights(100.0)
 	for corner in ["RearWestCorner", "RearSharedCorner", "RearEastCorner"]:
 		check(
 			c.room_occluders.has(scene.get_node("TestRoom/" + corner)),

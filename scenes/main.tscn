@@ -1,6 +1,6 @@
 [gd_scene load_steps=26 format=3]
 
-; TASK 011: full-height modular walls with camera-driven visibility; no ceiling/physics.
+; TASK 011.1: full-height modules with animated geometric clipping; no ceiling/physics.
 ; Rooms 6 x 6 m nominal; corridor 12 x 2.5 m nominal. Walls occupy part of these modules.
 
 [ext_resource type="Script" path="res://scripts/camera_controller.gd" id="1_camera"]
@@ -17,7 +17,7 @@
 size = Vector3(12, 0.2, 8.5)
 
 [sub_resource type="BoxMesh" id="Box_2"]
-size = Vector3(0.2, 3, 5.9)
+size = Vector3(0.2, 3, 5.7)
 
 [sub_resource type="BoxMesh" id="Box_3"]
 size = Vector3(1.6, 3, 0.2)
@@ -94,19 +94,19 @@ mesh = SubResource("Box_1")
 material_override = ExtResource("2_floor")
 
 [node name="WestWall" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(-5.9, 1.5, -1.1)
+position = Vector3(-5.9, 1.5, -1.2)
 mesh = SubResource("Box_2")
 material_override = ExtResource("3_wall")
 metadata/cutaway_side = "west"
 
 [node name="EastWall" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(5.9, 1.5, -1.1)
+position = Vector3(5.9, 1.5, -1.2)
 mesh = SubResource("Box_2")
 material_override = ExtResource("3_wall")
 metadata/cutaway_side = "east"
 
 [node name="SharedWall" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(0.0, 1.5, -1.1)
+position = Vector3(0.0, 1.5, -1.2)
 mesh = SubResource("Box_2")
 material_override = ExtResource("3_wall")
 metadata/cutaway_side = "shared"
@@ -310,6 +310,25 @@ position = Vector3(5.9, 1.5, -4.15)
 mesh = SubResource("Box_16")
 material_override = ExtResource("3_wall")
 metadata/cutaway_side = "rear_east"
+
+; Front junctions fill the original last 0.2m of side/shared walls.
+[node name="FrontWestCorner" type="MeshInstance3D" parent="TestRoom"]
+position = Vector3(-5.9, 1.5, 1.75)
+mesh = SubResource("Box_16")
+material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front_west"
+
+[node name="FrontSharedCorner" type="MeshInstance3D" parent="TestRoom"]
+position = Vector3(0, 1.5, 1.75)
+mesh = SubResource("Box_16")
+material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front_shared"
+
+[node name="FrontEastCorner" type="MeshInstance3D" parent="TestRoom"]
+position = Vector3(5.9, 1.5, 1.75)
+mesh = SubResource("Box_16")
+material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front_east"
 
 [node name="OfficeDesk" parent="TestRoom" instance=ExtResource("6_desk")]
 position = Vector3(-4.75, 0, -3.55)

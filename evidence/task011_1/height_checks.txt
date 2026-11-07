@@ -1,0 +1,11 @@
+PASS: exact full-height occupancy preserved; 40 modules; 3 front junctions split without overlap or aperture changes
+PASS: camera, placement code, assets, renderer, entire lighting/ambient byte-identical; no physics added
+PASS: unique geometry, per-module top clipping, zero-height guard, cache invalidation and max-of-current junction rule present in source (not executed)
+PASS: offline animation monotonic/bounded, 30/60/120Hz equivalent; all walls retain >=0.9m; front/rear junctions continuous at EVERY sampled frame; apertures unchanged
+PASS: offline orbit +0: lowered ['front', 'east', 'shared']; structural bases remain
+PASS: offline orbit +90: lowered ['rear', 'east', 'shared']; structural bases remain
+PASS: offline orbit +180: lowered ['rear', 'west', 'shared']; structural bases remain
+PASS: offline orbit +270: lowered ['front', 'west', 'shared']; structural bases remain
+PASS: offline orbit +360: lowered ['front', 'east', 'shared']; structural bases remain
+PASS: offline low rays blocked / above-cut rays clear / full walls block; upper headers clipped away, full restoration exact; hysteresis stable
+NOT VERIFIED: Godot compilation/input/animation/picking/shadows; TASK008 defects remain OPEN.

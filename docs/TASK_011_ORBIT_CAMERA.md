@@ -1,5 +1,8 @@
 # TASK 011 — Orbit Camera & Dynamic Wall Visibility
 
+> Исторический TASK 011: бинарное скрытие заменено плавным срезом в
+> [TASK 011.1](TASK_011_1_SMOOTH_WALLS.md). Историческое evidence сохранено.
+
 ## База и статус
 
 Рабочая ветка `arena/a9200966-press`, база TASK 010:

@@ -1,4 +1,4 @@
-"""TASK 011: independent static checks of the authored TSCN, not Godot runtime.
+"""TASK 011.1: independent static checks of the authored TSCN, not Godot runtime.
 
 Run from the repository root: python3 tests/layout_blockout_check.py
 Optional --preview renders offline diagrams with matplotlib (not Godot lighting).
@@ -88,9 +88,9 @@ def check():
     text, nodes, boxes = read_scene()
     floor = boxes["Floor"]
     assert floor["size"] == (12, 0.2, 8.5)
-    assert floor["high"][1] == 0 and len(boxes) == 37
+    assert floor["high"][1] == 0 and len(boxes) == 40
     assert abs(12 * 8.5 - 102) < 1e-8
-    print("PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 37 modular meshes")
+    print("PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 40 modular meshes")
     walls = {n: b for n, b in boxes.items() if n != "Floor"}
     for name, box in walls.items():
         assert all(s > 0 for s in box["size"]), name
@@ -264,7 +264,7 @@ def previews(nodes, boxes):
     from matplotlib.patches import Rectangle
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-    out = ROOT / "evidence/task011"
+    out = ROOT / "evidence/task011_1"
     out.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(12, 9))
     ax.add_patch(Rectangle((-6, -4.25), 12, 8.5, facecolor="#b7b1a3"))
@@ -299,7 +299,7 @@ def previews(nodes, boxes):
                 w,
                 d,
                 facecolor=(
-                    "#505858" if "Window" in name or "Door" in name else "#d4d0c5"
+                    "#505858" if name.startswith(("Window", "Door")) else "#d4d0c5"
                 ),
                 edgecolor="#555555",
                 linewidth=0.4,
@@ -317,18 +317,21 @@ def previews(nodes, boxes):
         aspect="equal",
     )
     ax.set_title(
-        "TASK 011 — OFFLINE dimension/capacity plan, NOT Godot\nDashed coloured zones are planning envelopes only, NOT furniture in scene",
+        "TASK 011.1 — OFFLINE dimension/capacity plan, NOT Godot\nDashed coloured zones are planning envelopes only, NOT furniture in scene",
         fontsize=12,
     )
     fig.savefig(out / "offline_plan.png", dpi=140, bbox_inches="tight")
     plt.close(fig)
-    from orbit_layout_check import classify, module_sides, visible_modules
+    from orbit_layout_check import classify, module_sides
+    from height_layout_check import clip_boxes
 
     membership = module_sides(nodes)
     for turn in (0, 90, 180, 270):
         yaw = 45 + turn
         state = classify(yaw)
-        visible = visible_modules(membership, state)
+        clipped = clip_boxes(
+            boxes, membership, {k: 0.9 if v else 3.0 for k, v in state.items()}
+        )
         filename, az = f"offline_orbit_{turn:03d}.png", 90 - yaw
         fig = plt.figure(figsize=(12, 9), facecolor="#e5e7e8")
         ax = fig.add_subplot(
@@ -337,12 +340,10 @@ def previews(nodes, boxes):
         polygons = []
         colors_out = []
         floor_polygons, floor_colors = [], []
-        for name, b in boxes.items():
-            if name != "Floor" and name not in visible:
-                continue
+        for name, b in clipped.items():
             x0, y0, z0 = b["low"]
             x1, y1, z1 = b["high"]
-            # Matplotlib Z-up; show actual geometry, no cutaway walls.
+            # Matplotlib Z-up; show the Python-model clipped BoxMesh geometry.
             verts = [
                 (x0, z0, y0),
                 (x1, z0, y0),
@@ -366,7 +367,7 @@ def previews(nodes, boxes):
                 if name == "Floor"
                 else (
                     (0.38, 0.4, 0.41)
-                    if "Window" in name or "Door" in name
+                    if name.startswith(("Window", "Door"))
                     else (0.83, 0.815, 0.77)
                 )
             )
@@ -403,9 +404,9 @@ def previews(nodes, boxes):
         ax.view_init(elev=35.26438968, azim=az)
         ax.set_axis_off()
         fig.suptitle(
-            f"TASK 011 — OFFLINE orbit +{turn} degrees / yaw {yaw % 360}, NOT Godot\n"
-            f"Hidden: {', '.join(k for k, v in state.items() if v)}\n"
-            "No lighting simulation; GLB desk omitted; wall visibility is a Python model",
+            f"TASK 011.1 — OFFLINE orbit +{turn} degrees / yaw {yaw % 360}, NOT Godot\n"
+            f"Lowered to 0.9m: {', '.join(k for k, v in state.items() if v)}\n"
+            "No lighting simulation; GLB desk omitted; height clipping is a Python model",
             fontsize=12,
         )
         fig.savefig(out / filename, dpi=140, bbox_inches="tight")
