@@ -1,4 +1,4 @@
-"""TASK 010: independent static checks of the authored TSCN, not Godot runtime.
+"""TASK 011: independent static checks of the authored TSCN, not Godot runtime.
 
 Run from the repository root: python3 tests/layout_blockout_check.py
 Optional --preview renders offline diagrams with matplotlib (not Godot lighting).
@@ -88,9 +88,9 @@ def check():
     text, nodes, boxes = read_scene()
     floor = boxes["Floor"]
     assert floor["size"] == (12, 0.2, 8.5)
-    assert floor["high"][1] == 0 and len(boxes) == 35
+    assert floor["high"][1] == 0 and len(boxes) == 37
     assert abs(12 * 8.5 - 102) < 1e-8
-    print("PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 35 modular meshes")
+    print("PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 37 modular meshes")
     walls = {n: b for n, b in boxes.items() if n != "Floor"}
     for name, box in walls.items():
         assert all(s > 0 for s in box["size"]), name
@@ -130,19 +130,19 @@ def check():
                 any(0.56 - 1e-8 <= abs(x - c) <= 0.6 + 1e-8 for c in (-3, 3))
                 and y <= 2.2
             )
-            expected_front = (y < 0.9 and not door_open) or jamb
+            expected_front = not door_open or jamb
             assert solid((x, y, 1.75)) == expected_front, ("front seam", x, y)
     for i in range(61):
         z = -4.2 + i * 0.1
         for x in (-5.9, 0, 5.9):
             assert solid((x, 0.45, z)), ("side/shared low seam", x, z)
-            assert solid((x, 1.5, z)) == (z <= -4.05 + 1e-8), (
-                "rear return/high cutaway",
+            assert solid((x, 1.5, z)), (
+                "full-height side/shared seam",
                 x,
                 z,
             )
     print(
-        "PASS: structural seams sampled continuously; rear wall closed except windows; low borders continuous, upper cutaway open"
+        "PASS: structural seams sampled continuously; rear wall closed except windows; full-height walls continuous (visibility is runtime-only)"
     )
     for side, center in [("Left", -3), ("Right", 3)]:
         # Check every part of the clear door width/height across wall thickness.
@@ -264,7 +264,7 @@ def previews(nodes, boxes):
     from matplotlib.patches import Rectangle
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-    out = ROOT / "evidence/task010"
+    out = ROOT / "evidence/task011"
     out.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(12, 9))
     ax.add_patch(Rectangle((-6, -4.25), 12, 8.5, facecolor="#b7b1a3"))
@@ -317,12 +317,19 @@ def previews(nodes, boxes):
         aspect="equal",
     )
     ax.set_title(
-        "TASK 010 — OFFLINE dimension/capacity plan, NOT Godot\nDashed coloured zones are planning envelopes only, NOT furniture in scene",
+        "TASK 011 — OFFLINE dimension/capacity plan, NOT Godot\nDashed coloured zones are planning envelopes only, NOT furniture in scene",
         fontsize=12,
     )
     fig.savefig(out / "offline_plan.png", dpi=140, bbox_inches="tight")
     plt.close(fig)
-    for filename, az in [("offline_isometric.png", 45), ("offline_reverse.png", -130)]:
+    from orbit_layout_check import classify, module_sides, visible_modules
+
+    membership = module_sides(nodes)
+    for turn in (0, 90, 180, 270):
+        yaw = 45 + turn
+        state = classify(yaw)
+        visible = visible_modules(membership, state)
+        filename, az = f"offline_orbit_{turn:03d}.png", 90 - yaw
         fig = plt.figure(figsize=(12, 9), facecolor="#e5e7e8")
         ax = fig.add_subplot(
             projection="3d", facecolor="#e5e7e8", computed_zorder=False
@@ -331,6 +338,8 @@ def previews(nodes, boxes):
         colors_out = []
         floor_polygons, floor_colors = [], []
         for name, b in boxes.items():
+            if name != "Floor" and name not in visible:
+                continue
             x0, y0, z0 = b["low"]
             x1, y1, z1 = b["high"]
             # Matplotlib Z-up; show actual geometry, no cutaway walls.
@@ -394,7 +403,9 @@ def previews(nodes, boxes):
         ax.view_init(elev=35.26438968, azim=az)
         ax.set_axis_off()
         fig.suptitle(
-            "TASK 010 — OFFLINE geometry diagram, NOT Godot\nNo lighting simulation; existing GLB desk is not drawn in this box-only diagram",
+            f"TASK 011 — OFFLINE orbit +{turn} degrees / yaw {yaw % 360}, NOT Godot\n"
+            f"Hidden: {', '.join(k for k, v in state.items() if v)}\n"
+            "No lighting simulation; GLB desk omitted; wall visibility is a Python model",
             fontsize=12,
         )
         fig.savefig(out / filename, dpi=140, bbox_inches="tight")

@@ -1,16 +1,15 @@
 extends Node3D
 
-## Task 001 — fixed isometric camera rig.
-##
-## Pan moves the rig on the horizontal (XZ) plane, zoom changes the orthographic
-## size of the child Camera3D. The rotation is written once in _ready() and is
-## never touched again, so the isometric angle stays stable at any zoom/pan.
-##
-## Inputs deliberately left free for future object placement:
-##   left mouse button, R, Q, E, Space, Escape.
-## Pan uses WASD / arrow keys and middle-mouse drag; zoom uses the wheel or +/-.
-## Home resets the view. This node reads input via _unhandled_input() so a
-## future UI layer can consume events before the camera sees them.
+## TASK 011: orthographic orbit around this rig's floor-plane focus.
+## RMB drag orbits; MMB pans; WASD/arrows pan; wheel/+/- zoom; Home resets.
+## Child stays 30m along local +Z, so rotation changes position AND direction.
+## Navigation press starts only in unhandled input (UI gets first refusal).
+
+signal view_changed
+
+const MIN_PITCH: float = -70.0
+const MAX_PITCH: float = -20.0
+const ORBIT_SENSITIVITY: float = 0.25
 
 const ISO_PITCH_DEG: float = -35.26438968  # atan(1 / sqrt(2)) — true isometric
 const ISO_YAW_DEG: float = 45.0
@@ -20,7 +19,7 @@ const INITIAL_SIZE: float = 16.0
 @export_range(0.001, 0.1, 0.001) var drag_pan_speed: float = 0.013
 @export_range(0.01, 0.5, 0.01) var zoom_step: float = 0.12
 @export_range(1.0, 30.0, 0.5) var zoom_smoothing: float = 12.0
-@export_range(2.0, 40.0, 0.5) var min_size: float = 6.0   # closest zoom
+@export_range(2.0, 40.0, 0.5) var min_size: float = 6.0  # closest zoom
 @export_range(2.0, 40.0, 0.5) var max_size: float = 26.0  # farthest zoom
 @export var pan_limit_x: float = 6.0
 @export var pan_limit_z: float = 4.25
@@ -28,6 +27,7 @@ const INITIAL_SIZE: float = 16.0
 var _camera: Camera3D
 var _target_size: float = INITIAL_SIZE
 var _dragging: bool = false
+var _orbiting: bool = false
 var _right: Vector3 = Vector3.RIGHT
 var _forward: Vector3 = Vector3.FORWARD
 
@@ -50,7 +50,7 @@ func _ready() -> void:
 	_update_axes()
 
 
-## Screen-aligned horizontal axes, derived from the (constant) rig rotation.
+## Screen-aligned horizontal axes, updated after every orbit.
 func _update_axes() -> void:
 	_right = transform.basis.x
 	_right.y = 0.0
@@ -86,11 +86,56 @@ func _process(delta: float) -> void:
 	_camera.size = clampf(_camera.size, min_size, max_size)
 
 
+func _input(event: InputEvent) -> void:
+	# End drags even when a GUI Control consumes the release. Consume LMB
+	# chords before placement's unhandled handler can confirm an object.
+	if event is InputEventMouseButton:
+		if not event.pressed:
+			if event.button_index == MOUSE_BUTTON_RIGHT:
+				_orbiting = false
+			elif event.button_index == MOUSE_BUTTON_MIDDLE:
+				_dragging = false
+		if event.button_index == MOUSE_BUTTON_LEFT and is_navigating():
+			get_viewport().set_input_as_handled()
+
+
+func is_navigating() -> bool:
+	return (
+		_orbiting
+		or _dragging
+		or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+		or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE)
+	)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		_orbiting = false
+		_dragging = false
+
+
+func _orbit(relative: Vector2) -> void:
+	rotation_degrees = Vector3(
+		clampf(rotation_degrees.x - relative.y * ORBIT_SENSITIVITY, MIN_PITCH, MAX_PITCH),
+		wrapf(rotation_degrees.y - relative.x * ORBIT_SENSITIVITY, -180.0, 180.0),
+		0.0
+	)
+	_update_axes()
+	view_changed.emit()
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event as InputEventMouseButton
-		if mb.button_index == MOUSE_BUTTON_MIDDLE:
+		if mb.button_index == MOUSE_BUTTON_RIGHT:
+			_orbiting = mb.pressed
+			if mb.pressed:
+				_dragging = false
+			get_viewport().set_input_as_handled()
+		elif mb.button_index == MOUSE_BUTTON_MIDDLE:
 			_dragging = mb.pressed
+			if mb.pressed:
+				_orbiting = false
 			get_viewport().set_input_as_handled()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_zoom(-1)
@@ -98,6 +143,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_zoom(1)
 			get_viewport().set_input_as_handled()
+
+	elif event is InputEventMouseMotion and _orbiting:
+		_orbit(event.relative)
+		get_viewport().set_input_as_handled()
 
 	elif event is InputEventMouseMotion and _dragging:
 		var mm: InputEventMouseMotion = event as InputEventMouseMotion
@@ -130,9 +179,13 @@ func _zoom(direction: int) -> void:
 
 func _reset() -> void:
 	position = Vector3.ZERO
+	rotation_degrees = Vector3(ISO_PITCH_DEG, ISO_YAW_DEG, 0.0)
+	_update_axes()
+	_orbiting = false
 	_target_size = clampf(INITIAL_SIZE, min_size, max_size)
 	_camera.size = _target_size
 	_dragging = false
+	view_changed.emit()
 
 
 func _clamp_position() -> void:

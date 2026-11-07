@@ -1,6 +1,6 @@
-[gd_scene load_steps=24 format=3]
+[gd_scene load_steps=26 format=3]
 
-; TASK 010: open-view 0.9m borders, full rear wall; unchanged plan, no ceiling/physics.
+; TASK 011: full-height modular walls with camera-driven visibility; no ceiling/physics.
 ; Rooms 6 x 6 m nominal; corridor 12 x 2.5 m nominal. Walls occupy part of these modules.
 
 [ext_resource type="Script" path="res://scripts/camera_controller.gd" id="1_camera"]
@@ -11,11 +11,13 @@
 [ext_resource type="PackedScene" path="res://assets/models/furniture/desks/office_desk.glb" id="6_desk"]
 [ext_resource type="Material" path="res://assets/materials/window_frame.tres" id="7_frame"]
 
+[ext_resource type="Script" path="res://scripts/wall_visibility.gd" id="8_walls"]
+
 [sub_resource type="BoxMesh" id="Box_1"]
 size = Vector3(12, 0.2, 8.5)
 
 [sub_resource type="BoxMesh" id="Box_2"]
-size = Vector3(0.2, 0.9, 5.9)
+size = Vector3(0.2, 3, 5.9)
 
 [sub_resource type="BoxMesh" id="Box_3"]
 size = Vector3(1.6, 3, 0.2)
@@ -30,10 +32,13 @@ size = Vector3(2.4, 0.9, 0.2)
 size = Vector3(2.4, 0.7, 0.2)
 
 [sub_resource type="BoxMesh" id="Box_7"]
-size = Vector3(2.2, 0.9, 0.2)
+size = Vector3(2.2, 3, 0.2)
 
 [sub_resource type="BoxMesh" id="Box_8"]
-size = Vector3(2.3, 0.9, 0.2)
+size = Vector3(2.3, 3, 0.2)
+
+[sub_resource type="BoxMesh" id="Box_9"]
+size = Vector3(1.2, 0.8, 0.2)
 
 [sub_resource type="BoxMesh" id="Box_10"]
 size = Vector3(0.04, 2.2, 0.22)
@@ -89,175 +94,222 @@ mesh = SubResource("Box_1")
 material_override = ExtResource("2_floor")
 
 [node name="WestWall" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(-5.9, 0.45, -1.1)
+position = Vector3(-5.9, 1.5, -1.1)
 mesh = SubResource("Box_2")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "west"
 
 [node name="EastWall" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(5.9, 0.45, -1.1)
+position = Vector3(5.9, 1.5, -1.1)
 mesh = SubResource("Box_2")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "east"
 
 [node name="SharedWall" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(0.0, 0.45, -1.1)
+position = Vector3(0.0, 1.5, -1.1)
 mesh = SubResource("Box_2")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "shared"
 
 [node name="RearLeftPierA" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-5.0, 1.5, -4.15)
 mesh = SubResource("Box_3")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="RearLeftPierB" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-0.95, 1.5, -4.15)
 mesh = SubResource("Box_4")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="RearLeftBelowWindow" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.0, 0.45, -4.15)
 mesh = SubResource("Box_5")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="RearLeftAboveWindow" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.0, 2.65, -4.15)
 mesh = SubResource("Box_6")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="FrontLeftPierA" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(-4.7, 0.45, 1.75)
+position = Vector3(-4.7, 1.5, 1.75)
 mesh = SubResource("Box_7")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front"
 
 [node name="FrontLeftPierB" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(-1.25, 0.45, 1.75)
+position = Vector3(-1.25, 1.5, 1.75)
 mesh = SubResource("Box_8")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front"
+
+[node name="FrontLeftLintel" type="MeshInstance3D" parent="TestRoom"]
+position = Vector3(-3, 2.6, 1.75)
+mesh = SubResource("Box_9")
+material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front"
 
 [node name="DoorLeftJambA" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.58, 1.1, 1.75)
 mesh = SubResource("Box_10")
 material_override = ExtResource("4_doorway")
+metadata/cutaway_side = "front"
 
 [node name="DoorLeftJambB" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-2.42, 1.1, 1.75)
 mesh = SubResource("Box_10")
 material_override = ExtResource("4_doorway")
+metadata/cutaway_side = "front"
 
 [node name="DoorLeftHead" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.0, 2.18, 1.75)
 mesh = SubResource("Box_11")
 material_override = ExtResource("4_doorway")
+metadata/cutaway_side = "front"
 
 [node name="WindowLeftSill" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.0, 0.925, -4.075)
 mesh = SubResource("Box_12")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowLeftJambA" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-4.175, 1.625, -4.15)
 mesh = SubResource("Box_13")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowLeftJambB" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-1.825, 1.625, -4.15)
 mesh = SubResource("Box_13")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowLeftHead" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.0, 2.275, -4.15)
 mesh = SubResource("Box_14")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowLeftMullion" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-3.0, 1.6, -4.15)
 mesh = SubResource("Box_15")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="RearRightPierA" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(0.95, 1.5, -4.15)
 mesh = SubResource("Box_4")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="RearRightPierB" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(5.0, 1.5, -4.15)
 mesh = SubResource("Box_3")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="RearRightBelowWindow" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.0, 0.45, -4.15)
 mesh = SubResource("Box_5")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="RearRightAboveWindow" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.0, 2.65, -4.15)
 mesh = SubResource("Box_6")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear"
 
 [node name="FrontRightPierA" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(1.25, 0.45, 1.75)
+position = Vector3(1.25, 1.5, 1.75)
 mesh = SubResource("Box_8")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front"
 
 [node name="FrontRightPierB" type="MeshInstance3D" parent="TestRoom"]
-position = Vector3(4.7, 0.45, 1.75)
+position = Vector3(4.7, 1.5, 1.75)
 mesh = SubResource("Box_7")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front"
+
+[node name="FrontRightLintel" type="MeshInstance3D" parent="TestRoom"]
+position = Vector3(3, 2.6, 1.75)
+mesh = SubResource("Box_9")
+material_override = ExtResource("3_wall")
+metadata/cutaway_side = "front"
 
 [node name="DoorRightJambA" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(2.42, 1.1, 1.75)
 mesh = SubResource("Box_10")
 material_override = ExtResource("4_doorway")
+metadata/cutaway_side = "front"
 
 [node name="DoorRightJambB" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.58, 1.1, 1.75)
 mesh = SubResource("Box_10")
 material_override = ExtResource("4_doorway")
+metadata/cutaway_side = "front"
 
 [node name="DoorRightHead" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.0, 2.18, 1.75)
 mesh = SubResource("Box_11")
 material_override = ExtResource("4_doorway")
+metadata/cutaway_side = "front"
 
 [node name="WindowRightSill" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.0, 0.925, -4.075)
 mesh = SubResource("Box_12")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowRightJambA" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(1.825, 1.625, -4.15)
 mesh = SubResource("Box_13")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowRightJambB" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(4.175, 1.625, -4.15)
 mesh = SubResource("Box_13")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowRightHead" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.0, 2.275, -4.15)
 mesh = SubResource("Box_14")
 material_override = ExtResource("7_frame")
+metadata/cutaway_side = "rear"
 
 [node name="WindowRightMullion" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(3.0, 1.6, -4.15)
 mesh = SubResource("Box_15")
 material_override = ExtResource("7_frame")
 
-; Full-height rear returns close corners after side/partition cut-down.
+; Separate full-height rear returns retain closed corners during cutaway.
+metadata/cutaway_side = "rear"
+
 [node name="RearWestCorner" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(-5.9, 1.5, -4.15)
 mesh = SubResource("Box_16")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear_west"
 
 [node name="RearSharedCorner" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(0, 1.5, -4.15)
 mesh = SubResource("Box_16")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear_shared"
 
 [node name="RearEastCorner" type="MeshInstance3D" parent="TestRoom"]
 position = Vector3(5.9, 1.5, -4.15)
 mesh = SubResource("Box_16")
 material_override = ExtResource("3_wall")
+metadata/cutaway_side = "rear_east"
 
 [node name="OfficeDesk" parent="TestRoom" instance=ExtResource("6_desk")]
 position = Vector3(-4.75, 0, -3.55)
@@ -352,3 +404,6 @@ spot_attenuation = 1.2
 spot_angle = 38.0
 spot_angle_attenuation = 0.7
 shadow_enabled = false
+
+[node name="WallVisibility" type="Node" parent="."]
+script = ExtResource("8_walls")

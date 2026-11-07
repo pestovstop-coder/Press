@@ -1,0 +1,41 @@
+TASK011 — actual static checks; NO Godot execution
+Base: 389ab8c602b136d28d3c95815242833e38bc53f5
+Branch: arena/a9200966-press
+PASS: gdparse all scripts and tests (syntax only)
+Success: no problems found
+5 files would be left unchanged
+All done! ✨ 🍰 ✨
+3 files would be left unchanged.
+PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 37 modular meshes
+PASS: positive dimensions; all wall/frame volumes fit footprint, no positive-volume overlaps
+PASS: structural seams sampled continuously; rear wall closed except windows; full-height walls continuous (visibility is runtime-only)
+PASS: Left: door clear 1.12 x 2.16m; 2 window apertures 1.13 x 1.30m; window-fill axis geometrically reaches office floor at (-3.55, 0.0, -0.121)
+PASS: Right: door clear 1.12 x 2.16m; 2 window apertures 1.13 x 1.30m; window-fill axis geometrically reaches office floor at (2.45, 0.0, -0.121)
+PASS: corridor front open; elevated headers/frames have geometric support, floor/wall baseline continuous
+PASS: Left: 5 planning workplace envelopes 1.6 x 1.4m, sofa/table/storage fit without overlap
+PASS: Right: 5 planning workplace envelopes 1.6 x 1.4m, sofa/table/storage fit without overlap
+PASS: geometry fits initial 16:9 camera frustum at unchanged isometric angle (not a visibility/occlusion test)
+PASS: resource paths/load_steps; no runtime, lighting or editor acceptance claimed
+PASS: full 3m main walls; exact old footprint, floor, rear/windows/frames retained; 36 tagged wall modules including restored door lintels
+PASS: desk, camera projection/local offset, materials, renderer and entire TASK010 lighting unchanged; no physics bodies added
+PASS: placement logic unchanged except navigation-chord input guard; invisible meshes still excluded from cached-triangle picking
+PASS: source input guards, immediate visibility signal, orbit wrapping/clamping and Home reset present (not executed)
+PASS: offline +0deg yaw=45: hidden ['east', 'front', 'shared']; worktop samples 125/125 clear in EACH room
+PASS: offline +90deg yaw=135: hidden ['east', 'rear', 'shared']; worktop samples 125/125 clear in EACH room
+PASS: offline +180deg yaw=225: hidden ['rear', 'shared', 'west']; worktop samples 125/125 clear in EACH room
+PASS: offline +270deg yaw=315: hidden ['front', 'shared', 'west']; worktop samples 125/125 clear in EACH room
+PASS: offline full 360deg cycle restores state; every module can hide AND reappear; hysteresis jitter stable; orbit radius 30m, height >10m at pitch limits
+NOT VERIFIED: engine import/compilation, actual RMB/MMB/GUI/input, visual occlusion/shadows, placement regression. TASK008 defects OPEN.
+Offline GLB triangle-data checks (Python, NOT Godot runtime)
+Triangles: 396
+PASS: top: nearest ray distance 2.250000
+PASS: side: nearest ray distance 2.200000
+PASS: opposite side: nearest ray distance 2.200000
+PASS: front: nearest ray distance 2.600000
+PASS: gap between legs: nearest ray distance inf
+This confirms the GLB has selectable top/side triangles, not the execution of GDScript.
+PASS: compatibility entry point
+PASS: all assets/project settings and historical TASK009/010 evidence unchanged
+PASS: documentation local links
+Godot/godot4 ABSENT: no import, engine compile, handler smoke, actual GUI/input, visual test, screenshots or video.
+TASK008 panel-hitbox and tabletop-picking defects remain OPEN.

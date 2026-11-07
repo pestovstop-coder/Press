@@ -1,0 +1,10 @@
+PASS: full 3m main walls; exact old footprint, floor, rear/windows/frames retained; 36 tagged wall modules including restored door lintels
+PASS: desk, camera projection/local offset, materials, renderer and entire TASK010 lighting unchanged; no physics bodies added
+PASS: placement logic unchanged except navigation-chord input guard; invisible meshes still excluded from cached-triangle picking
+PASS: source input guards, immediate visibility signal, orbit wrapping/clamping and Home reset present (not executed)
+PASS: offline +0deg yaw=45: hidden ['east', 'front', 'shared']; worktop samples 125/125 clear in EACH room
+PASS: offline +90deg yaw=135: hidden ['east', 'rear', 'shared']; worktop samples 125/125 clear in EACH room
+PASS: offline +180deg yaw=225: hidden ['rear', 'shared', 'west']; worktop samples 125/125 clear in EACH room
+PASS: offline +270deg yaw=315: hidden ['front', 'shared', 'west']; worktop samples 125/125 clear in EACH room
+PASS: offline full 360deg cycle restores state; every module can hide AND reappear; hysteresis jitter stable; orbit radius 30m, height >10m at pitch limits
+NOT VERIFIED: engine import/compilation, actual RMB/MMB/GUI/input, visual occlusion/shadows, placement regression. TASK008 defects OPEN.

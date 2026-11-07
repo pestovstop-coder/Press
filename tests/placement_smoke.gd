@@ -434,19 +434,23 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 
 func _test_layout(c: Node, scene: Node) -> void:
 	var partition: MeshInstance3D = scene.get_node("TestRoom/SharedWall")
-	check(is_equal_approx(partition.get_aabb().size.y, 0.9), "TASK 010 partition is 0.9m")
-	check(
-		c._mesh_ray_distance(partition, Vector3(-0.5, 0.45, -1), Vector3.RIGHT) < 1.0,
-		"TASK 010 low partition still participates in picking occlusion"
-	)
+	var walls: Node = scene.get_node("WallVisibility")
+	check(is_equal_approx(partition.get_aabb().size.y, 3.0), "TASK 011 partition is 3m")
+	walls.update_visibility(Vector3(1, 0, 1))
 	check(
 		is_inf(c._mesh_ray_distance(partition, Vector3(-0.5, 1.2, -1), Vector3.RIGHT)),
-		"TASK 010 picking ray above partition is unobstructed"
+		"TASK 011 hidden partition does not occlude picking"
 	)
+	walls.update_visibility(Vector3(0, 0, 1))
+	check(
+		c._mesh_ray_distance(partition, Vector3(-0.5, 1.2, -1), Vector3.RIGHT) < 1.0,
+		"TASK 011 visible full partition still occludes picking"
+	)
+	walls.update_visibility(Vector3(1, 0, 1))
 	for corner in ["RearWestCorner", "RearSharedCorner", "RearEastCorner"]:
 		check(
 			c.room_occluders.has(scene.get_node("TestRoom/" + corner)),
-			"TASK 010 rear return included in room occluders"
+			"TASK 011 rear return included in room occluders"
 		)
 	for name in ["SharedWall", "WestWall", "DoorLeftHead", "WindowRightMullion"]:
 		check(

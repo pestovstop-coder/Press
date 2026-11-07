@@ -1,5 +1,8 @@
 # TASK 009 — Office Layout Blockout & Lighting Pass
 
+> Исторический этап. Текущие полные стены и орбитальная камера описаны в
+> [TASK 011](TASK_011_ORBIT_CAMERA.md); evidence этого этапа сохранено без изменений.
+
 ## База и границы работ
 
 Исходный HEAD `089a0c297d35dad69af1b13cd6201b1500b30df5`, ветка

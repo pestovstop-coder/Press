@@ -52,8 +52,8 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# GUI may swallow a release over the panel. Always end a camera MMB drag,
-	# otherwise the unchanged camera's _dragging flag could remain stuck.
+	# Preserve legacy MMB release forwarding; the orbit camera also handles
+	# its own releases in _input, including RMB releases over the panel.
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_MIDDLE and not event.pressed:
 			camera.get_parent()._unhandled_input(event)
@@ -82,10 +82,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif active and event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if event.pressed and not Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+			if event.pressed and not camera.get_parent().is_navigating():
 				click_at(event.position, event.ctrl_pressed)
 			get_viewport().set_input_as_handled()
-	# MMB/motion/wheel go to the unchanged camera controller.
+	# RMB/MMB/motion/wheel are navigation, never placement confirmation.
 
 
 func click_at(screen_point: Vector2, keep_placing: bool = false) -> void:
