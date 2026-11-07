@@ -1,0 +1,21 @@
+TASK 010 — actual static checks (NOT Godot runtime)
+Base: 6a765c81a68eb70f100a4b95d5aded6bcb4b8d72
+Branch: arena/a9200966-press
+PASS: gdparse all scripts/tests (syntax only, not Godot compilation)
+Success: no problems found
+1 file would be left unchanged
+All done! ✨ 🍰 ✨
+2 files would be left unchanged.
+PASS: all seven borders 0.9m; full 3m rear returns; original rear/window/door/floor/desk geometry preserved
+PASS: exact low-level architectural footprint slice unchanged, including both entrances
+PASS: low partition still occludes below 0.9m; ray above it is clear (geometry only, not runtime picking)
+PASS: Left: offline worktop samples visible 55/125 -> 116/125 from unchanged camera direction
+PASS: Right: offline worktop samples visible 55/125 -> 116/125 from unchanged camera direction
+PASS: exactly one shadow caster (Sun), eight shadowless fills; no new lights, fill energies reduced
+PASS: camera, controls, placement states/logic, renderer, model and palette byte-identical to base
+NOT VERIFIED: Godot rendering/input, soft/contact shadows, exposure, actual editor picking, known TASK 008 defects
+PASS: protected runtime files and historical TASK 009 evidence unchanged
+PASS: git diff --check
+PASS: local links in README and TASK 010 docs/evidence
+Godot/godot4 absent: no import, engine smoke, visual acceptance, or actual screenshots.
+PASS: static suite only; TASK 008 hitbox/top-picking defects remain OPEN.

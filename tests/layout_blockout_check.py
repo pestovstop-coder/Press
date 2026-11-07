@@ -1,4 +1,4 @@
-"""TASK 009: independent static checks of the authored TSCN, not Godot runtime.
+"""TASK 010: independent static checks of the authored TSCN, not Godot runtime.
 
 Run from the repository root: python3 tests/layout_blockout_check.py
 Optional --preview renders offline diagrams with matplotlib (not Godot lighting).
@@ -19,8 +19,8 @@ def vector(text):
     return tuple(float(v.strip()) for v in text.split(","))
 
 
-def read_scene():
-    text = SCENE.read_text()
+def read_scene(text=None):
+    text = SCENE.read_text() if text is None else text
     resources = {}
     nodes = {}
     for header, body in re.findall(
@@ -88,9 +88,9 @@ def check():
     text, nodes, boxes = read_scene()
     floor = boxes["Floor"]
     assert floor["size"] == (12, 0.2, 8.5)
-    assert floor["high"][1] == 0 and len(boxes) == 34
+    assert floor["high"][1] == 0 and len(boxes) == 35
     assert abs(12 * 8.5 - 102) < 1e-8
-    print("PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 34 modular meshes")
+    print("PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 35 modular meshes")
     walls = {n: b for n, b in boxes.items() if n != "Floor"}
     for name, box in walls.items():
         assert all(s > 0 for s in box["size"]), name
@@ -126,13 +126,23 @@ def check():
             )
             assert solid((x, y, -4.15)) == (not rear_open), ("rear seam", x, y)
             door_open = any(abs(x - c) < 0.56 for c in (-3, 3)) and y < 2.16
-            assert solid((x, y, 1.75)) == (not door_open), ("front seam", x, y)
+            jamb = (
+                any(0.56 - 1e-8 <= abs(x - c) <= 0.6 + 1e-8 for c in (-3, 3))
+                and y <= 2.2
+            )
+            expected_front = (y < 0.9 and not door_open) or jamb
+            assert solid((x, y, 1.75)) == expected_front, ("front seam", x, y)
     for i in range(61):
         z = -4.2 + i * 0.1
         for x in (-5.9, 0, 5.9):
-            assert solid((x, 1.5, z)), ("side/shared seam", x, z)
+            assert solid((x, 0.45, z)), ("side/shared low seam", x, z)
+            assert solid((x, 1.5, z)) == (z <= -4.05 + 1e-8), (
+                "rear return/high cutaway",
+                x,
+                z,
+            )
     print(
-        "PASS: structural seams sampled continuously; only intended doors/windows are open"
+        "PASS: structural seams sampled continuously; rear wall closed except windows; low borders continuous, upper cutaway open"
     )
     for side, center in [("Left", -3), ("Right", 3)]:
         # Check every part of the clear door width/height across wall thickness.
@@ -157,7 +167,7 @@ def check():
                 )
                 < 1
             )
-        # Beam enters the aperture and reaches floor inside the office, unblocked.
+        # Geometric axis only: shadowless spots do NOT physically occlude their fill.
         body = nodes[f"Window{side}Daylight"]["body"]
         origin = vector(re.search(r"position = Vector3\(([^)]+)\)", body)[1])
         pitch, yaw, _ = vector(
@@ -174,7 +184,7 @@ def check():
         landing = tuple(o + d * distance for o, d in zip(origin, direction))
         assert -4.05 < landing[2] < 1.65
         print(
-            f"PASS: {side}: door clear 1.12 x 2.16m; 2 window apertures 1.13 x 1.30m; daylight axis reaches office floor at {tuple(round(v, 3) for v in landing)}"
+            f"PASS: {side}: door clear 1.12 x 2.16m; 2 window apertures 1.13 x 1.30m; window-fill axis geometrically reaches office floor at {tuple(round(v, 3) for v in landing)}"
         )
     # No obstacles at the open corridor front; walls reach Y=0 or meet supported jamb/sill.
     assert all(b["high"][2] < 2 for b in walls.values())
@@ -254,7 +264,7 @@ def previews(nodes, boxes):
     from matplotlib.patches import Rectangle
     from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-    out = ROOT / "evidence/task009"
+    out = ROOT / "evidence/task010"
     out.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(12, 9))
     ax.add_patch(Rectangle((-6, -4.25), 12, 8.5, facecolor="#b7b1a3"))
@@ -307,16 +317,19 @@ def previews(nodes, boxes):
         aspect="equal",
     )
     ax.set_title(
-        "TASK 009 — OFFLINE dimension/capacity plan, NOT Godot\nDashed coloured zones are planning envelopes only, NOT furniture in scene",
+        "TASK 010 — OFFLINE dimension/capacity plan, NOT Godot\nDashed coloured zones are planning envelopes only, NOT furniture in scene",
         fontsize=12,
     )
     fig.savefig(out / "offline_plan.png", dpi=140, bbox_inches="tight")
     plt.close(fig)
     for filename, az in [("offline_isometric.png", 45), ("offline_reverse.png", -130)]:
         fig = plt.figure(figsize=(12, 9), facecolor="#e5e7e8")
-        ax = fig.add_subplot(projection="3d", facecolor="#e5e7e8")
+        ax = fig.add_subplot(
+            projection="3d", facecolor="#e5e7e8", computed_zorder=False
+        )
         polygons = []
         colors_out = []
+        floor_polygons, floor_colors = [], []
         for name, b in boxes.items():
             x0, y0, z0 = b["low"]
             x1, y1, z1 = b["high"]
@@ -349,13 +362,31 @@ def previews(nodes, boxes):
                 )
             )
             for i, face in enumerate(faces):
-                polygons.append([verts[j] for j in face])
-                colors_out.append(
+                target_polys = floor_polygons if name == "Floor" else polygons
+                target_colors = floor_colors if name == "Floor" else colors_out
+                target_polys.append([verts[j] for j in face])
+                target_colors.append(
                     tuple(c * [0.65, 1, 0.8, 0.88, 0.9, 0.85][i] for c in base)
                 )
+        # All architecture is on/above Y=0 and views are from above. Draw floor
+        # behind architecture explicitly: painter sorting a giant floor face by
+        # its centroid would incorrectly hide low partitions in this diagram.
         ax.add_collection3d(
             Poly3DCollection(
-                polygons, facecolors=colors_out, edgecolors="#5f6260", linewidths=0.2
+                floor_polygons,
+                facecolors=floor_colors,
+                edgecolors="#5f6260",
+                linewidths=0.2,
+                zorder=0,
+            )
+        )
+        ax.add_collection3d(
+            Poly3DCollection(
+                polygons,
+                facecolors=colors_out,
+                edgecolors="#5f6260",
+                linewidths=0.2,
+                zorder=1,
             )
         )
         ax.set(xlim=(-6.4, 6.4), ylim=(-4.6, 4.6), zlim=(-0.2, 3.3))
@@ -363,7 +394,7 @@ def previews(nodes, boxes):
         ax.view_init(elev=35.26438968, azim=az)
         ax.set_axis_off()
         fig.suptitle(
-            "TASK 009 — OFFLINE geometry diagram, NOT Godot\nNo lighting simulation; existing GLB desk is not drawn in this box-only diagram",
+            "TASK 010 — OFFLINE geometry diagram, NOT Godot\nNo lighting simulation; existing GLB desk is not drawn in this box-only diagram",
             fontsize=12,
         )
         fig.savefig(out / filename, dpi=140, bbox_inches="tight")

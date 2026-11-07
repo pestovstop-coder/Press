@@ -433,6 +433,21 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 
 
 func _test_layout(c: Node, scene: Node) -> void:
+	var partition: MeshInstance3D = scene.get_node("TestRoom/SharedWall")
+	check(is_equal_approx(partition.get_aabb().size.y, 0.9), "TASK 010 partition is 0.9m")
+	check(
+		c._mesh_ray_distance(partition, Vector3(-0.5, 0.45, -1), Vector3.RIGHT) < 1.0,
+		"TASK 010 low partition still participates in picking occlusion"
+	)
+	check(
+		is_inf(c._mesh_ray_distance(partition, Vector3(-0.5, 1.2, -1), Vector3.RIGHT)),
+		"TASK 010 picking ray above partition is unobstructed"
+	)
+	for corner in ["RearWestCorner", "RearSharedCorner", "RearEastCorner"]:
+		check(
+			c.room_occluders.has(scene.get_node("TestRoom/" + corner)),
+			"TASK 010 rear return included in room occluders"
+		)
 	for name in ["SharedWall", "WestWall", "DoorLeftHead", "WindowRightMullion"]:
 		check(
 			c.room_occluders.has(scene.get_node("TestRoom/" + name)),

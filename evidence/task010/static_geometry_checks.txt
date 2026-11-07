@@ -1,0 +1,10 @@
+PASS: one 12 x 8.5m floor, top Y=0, area 102m2; 35 modular meshes
+PASS: positive dimensions; all wall/frame volumes fit footprint, no positive-volume overlaps
+PASS: structural seams sampled continuously; rear wall closed except windows; low borders continuous, upper cutaway open
+PASS: Left: door clear 1.12 x 2.16m; 2 window apertures 1.13 x 1.30m; window-fill axis geometrically reaches office floor at (-3.55, 0.0, -0.121)
+PASS: Right: door clear 1.12 x 2.16m; 2 window apertures 1.13 x 1.30m; window-fill axis geometrically reaches office floor at (2.45, 0.0, -0.121)
+PASS: corridor front open; elevated headers/frames have geometric support, floor/wall baseline continuous
+PASS: Left: 5 planning workplace envelopes 1.6 x 1.4m, sofa/table/storage fit without overlap
+PASS: Right: 5 planning workplace envelopes 1.6 x 1.4m, sofa/table/storage fit without overlap
+PASS: geometry fits initial 16:9 camera frustum at unchanged isometric angle (not a visibility/occlusion test)
+PASS: resource paths/load_steps; no runtime, lighting or editor acceptance claimed

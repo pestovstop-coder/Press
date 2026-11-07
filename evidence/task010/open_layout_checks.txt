@@ -1,0 +1,8 @@
+PASS: all seven borders 0.9m; full 3m rear returns; original rear/window/door/floor/desk geometry preserved
+PASS: exact low-level architectural footprint slice unchanged, including both entrances
+PASS: low partition still occludes below 0.9m; ray above it is clear (geometry only, not runtime picking)
+PASS: Left: offline worktop samples visible 55/125 -> 116/125 from unchanged camera direction
+PASS: Right: offline worktop samples visible 55/125 -> 116/125 from unchanged camera direction
+PASS: exactly one shadow caster (Sun), eight shadowless fills; no new lights, fill energies reduced
+PASS: camera, controls, placement states/logic, renderer, model and palette byte-identical to base
+NOT VERIFIED: Godot rendering/input, soft/contact shadows, exposure, actual editor picking, known TASK 008 defects
