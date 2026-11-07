@@ -1,0 +1,7 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+; TASK 009: plain muted grey frames/sills, no glossy glass or decorative texture.
+[resource]
+albedo_color = Color(0.38, 0.40, 0.41, 1)
+roughness = 0.88
+metallic = 0.15

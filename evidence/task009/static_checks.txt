@@ -1,0 +1,22 @@
+TASK 009 — static/offline checks, NOT Godot runtime
+Base: 089a0c297d35dad69af1b13cd6201b1500b30df5
+Branch: arena/a9200966-press; initial HEAD matched GitHub, initial tree clean.
+
+PASS: python3 tests/layout_blockout_check.py
+      See static_geometry_checks.txt; reads actual scene geometry.
+PASS: python3 tests/desk_ray_data_check.py
+      See desk_regression_checks.txt; reads unchanged GLB data.
+PASS: gdparse scripts/*.gd tests/*.gd
+PASS: gdlint scripts/placement_controller.gd tests/placement_smoke.gd
+      Success: no problems found
+PASS: git diff --check
+PASS: placement controller, desk GLB, floor/wall materials, project.godot byte-identical to base
+PASS: camera changes restricted to INITIAL_SIZE and X/Z pan limits
+PASS: documentation links and resource paths
+
+Godot/godot4 executable not found. NOT RUN: Godot import, engine compilation,
+smoke test, actual camera controls/grid/placement/R/move/Ctrl input, lighting,
+exposure/shadow/contact quality, visual seams and visibility of interiors.
+No Godot screenshots/video. Offline Matplotlib images are explicitly labelled
+and do not simulate engine lighting; the box-only 3D diagram omits GLB rendering.
+Known TASK 008 panel-hitbox and top-surface-picking defects remain OPEN.

@@ -14,7 +14,7 @@ extends Node3D
 
 const ISO_PITCH_DEG: float = -35.26438968  # atan(1 / sqrt(2)) — true isometric
 const ISO_YAW_DEG: float = 45.0
-const INITIAL_SIZE: float = 14.0
+const INITIAL_SIZE: float = 16.0
 
 @export_range(1.0, 20.0, 0.5) var pan_speed: float = 5.0
 @export_range(0.001, 0.1, 0.001) var drag_pan_speed: float = 0.013
@@ -22,8 +22,8 @@ const INITIAL_SIZE: float = 14.0
 @export_range(1.0, 30.0, 0.5) var zoom_smoothing: float = 12.0
 @export_range(2.0, 40.0, 0.5) var min_size: float = 6.0   # closest zoom
 @export_range(2.0, 40.0, 0.5) var max_size: float = 26.0  # farthest zoom
-@export var pan_limit_x: float = 5.0
-@export var pan_limit_z: float = 5.0
+@export var pan_limit_x: float = 6.0
+@export var pan_limit_z: float = 4.25
 
 var _camera: Camera3D
 var _target_size: float = INITIAL_SIZE

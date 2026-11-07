@@ -67,7 +67,13 @@ func _run() -> void:
 	var rig: Node3D = scene.get_node("CameraRig")
 	var camera: Camera3D = rig.get_node("Camera3D")
 	var original_desk: Node3D = scene.get_node("TestRoom/OfficeDesk")
+	_test_layout(c, scene)
 	var camera_before: Transform3D = rig.global_transform
+	check(
+		c.floor_bounds.size.is_equal_approx(Vector3(12, 0.2, 8.5)),
+		"grid derives new continuous floor bounds"
+	)
+	check(is_equal_approx(camera.size, 16.0), "new layout uses wider initial camera size")
 	var initial: Transform3D = original_desk.global_transform
 	var initial_materials: Array = materials_snapshot(c, original_desk)
 	var empty: Vector2 = camera.unproject_position(Vector3(3, 0, 2))
@@ -130,7 +136,7 @@ func _run() -> void:
 	)
 	check(c.ghost_records.size() == 9, "desk preview ghosts all meshes")
 	key(c, KEY_R)
-	var desk_screen: Vector2 = camera.unproject_position(Vector3(-2, 0, -2))
+	var desk_screen: Vector2 = camera.unproject_position(Vector3(-4.5, 0, -1.5))
 	c._update_preview(desk_screen)
 	click(c, desk_screen)
 	check(c.placed.get_child_count() == 3, "desk placed once")
@@ -151,7 +157,9 @@ func _run() -> void:
 	)
 	key(c, KEY_ESCAPE)
 	check_idle(c, "cancel new desk move returns idle")
-	var pick_screen: Vector2 = camera.unproject_position(Vector3(0, 0.75, 0))
+	var pick_screen: Vector2 = camera.unproject_position(
+		original_desk.to_global(Vector3(0, 0.75, 0))
+	)
 	check(c.pick_object(pick_screen) == original_desk, "ray picks original room desk")
 	click(c, pick_screen)
 	check(
@@ -338,7 +346,10 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 		"exact ray from above selects tabletop"
 	)
 	check(
-		c._pick_ray(desk.to_global(Vector3(3, 0.73, 0)), desk.global_basis * Vector3.LEFT) == desk,
+		(
+			c._pick_ray(desk.to_global(Vector3(1.5, 0.73, 0)), desk.global_basis * Vector3.LEFT)
+			== desk
+		),
 		"exact ray from side selects tabletop edge"
 	)
 	check(
@@ -419,3 +430,24 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 		"Ctrl MOVING confirms without cloning furniture"
 	)
 	key(c, KEY_ESCAPE)
+
+
+func _test_layout(c: Node, scene: Node) -> void:
+	for name in ["SharedWall", "WestWall", "DoorLeftHead", "WindowRightMullion"]:
+		check(
+			c.room_occluders.has(scene.get_node("TestRoom/" + name)),
+			"new room architecture participates in existing picking occlusion: " + name
+		)
+	for center: float in [-3.0, 3.0]:
+		var door_distance: float = INF
+		var window_distance: float = INF
+		for mesh: MeshInstance3D in c.room_occluders:
+			door_distance = minf(
+				door_distance, c._mesh_ray_distance(mesh, Vector3(center, 1, 2.5), Vector3.FORWARD)
+			)
+			window_distance = minf(
+				window_distance,
+				c._mesh_ray_distance(mesh, Vector3(center - 0.55, 1.6, -5), Vector3.BACK)
+			)
+		check(door_distance > 2.0, "ray enters office through real door opening")
+		check(window_distance > 1.2, "ray enters office through real window opening")
