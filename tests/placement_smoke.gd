@@ -126,6 +126,14 @@ func _test_cell_placement(c: Node, camera: Camera3D) -> void:
 	c.select_asset("block")
 	check(
 		(
+			c.grid.is_in_group(Placement.PLACEMENT_VISUAL_GROUP)
+			and not c.room_occluders.has(c.grid)
+			and c.room_occluders.has(c.floor_mesh)
+		),
+		"editor grid is not an obstacle, while floor remains available for ray occlusion"
+	)
+	check(
+		(
 			c.valid_target
 			and c.placement_diagnostic == "VALID"
 			and c.front_marker.visible
@@ -133,7 +141,34 @@ func _test_cell_placement(c: Node, camera: Camera3D) -> void:
 		),
 		"block selection starts with a free valid footprint and matching green marker"
 	)
+	var obstacle := MeshInstance3D.new()
+	obstacle.name = "SmokeTestObstacle"
+	var obstacle_mesh := BoxMesh.new()
+	obstacle_mesh.size = Vector3(0.4, 1.0, 0.4)
+	obstacle.mesh = obstacle_mesh
+	c.add_child(obstacle)
+	obstacle.global_position = Vector3(2.25, 0.5, 2.75)
+	c.room_occluders.append(obstacle)
+	var obstacle_target: Vector2 = camera.unproject_position(Vector3(2.24, 0, 2.76))
 	var before: int = c.placed.get_child_count()
+	c.click_at(obstacle_target)
+	check(
+		c.placed.get_child_count() == before and c.placement_diagnostic == "OBSTACLE_COLLISION",
+		"real non-wall obstacle blocks confirmation with a specific reason"
+	)
+	c.room_occluders.erase(obstacle)
+	obstacle.queue_free()
+	c.click_at(obstacle_target)
+	check(
+		c.placed.get_child_count() == before + 1,
+		"removing the diagnostic obstacle allows the same free placement target"
+	)
+	var temporary_placement: Node3D = c.placed.get_child(before)
+	c.editable.erase(temporary_placement)
+	c.placed.remove_child(temporary_placement)
+	temporary_placement.free()
+	c.select_asset("block")
+	before = c.placed.get_child_count()
 	var checks: Array = [
 		[Vector3(2.24, 0, 2.76), true, "VALID", "free cells inside the room are allowed"],
 		[
@@ -202,6 +237,7 @@ func _run() -> void:
 	var camera: Camera3D = rig.get_node("Camera3D")
 	var original_desk: Node3D = scene.get_node("TestRoom/OfficeDesk")
 	_test_layout(c, scene)
+	_test_room_labels(scene, rig, camera, c)
 	_test_cell_helpers(c)
 	await _test_cell_placement(c, camera)
 	var camera_before: Transform3D = rig.global_transform
@@ -784,6 +820,44 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 		not c.grid.visible and (c.front_marker == null or not c.front_marker.visible),
 		"leaving placement mode hides grid and marker"
 	)
+
+
+func _test_room_labels(scene: Node, rig: Node3D, camera: Camera3D, c: Node) -> void:
+	var labels: Node3D = scene.get_node("RoomLabels")
+	check(labels.plaques.size() == 3, "first scene has three zone wayfinding plaques")
+	var expected: Array = [
+		["office_101", "КАБИНЕТ", "101", Vector3(-3, 0, 2.15)],
+		["office_102", "КАБИНЕТ", "102", Vector3(3, 0, 2.15)],
+		["corridor_main", "ОБЩИЙ", "КОРИДОР", Vector3(0, 0, 3.35)],
+	]
+	for entry in expected:
+		var plaque: Node3D = labels.get_node("RoomLabel_" + entry[0])
+		check(
+			plaque.get_meta("zone_id") == entry[0] and plaque.position.is_equal_approx(entry[3]),
+			"plaque is anchored to the documented zone " + entry[0]
+		)
+		var room_type: Label3D = plaque.get_node("RoomType") as Label3D
+		var room_name: Label3D = plaque.get_node("RoomName") as Label3D
+		check(
+			room_type.text == entry[1] and room_name.text == entry[2],
+			"plaque text is editable and hierarchical for " + entry[0]
+		)
+		check(
+			not c.room_occluders.has(plaque.get_node("PlaqueBacking")),
+			"wayfinding plaque does not enter furniture obstacle checks"
+		)
+	var original_yaw: float = rig.rotation.y
+	var first_plaque: Node3D = labels.plaques[0]
+	rig.rotation.y += PI * 0.5
+	labels.update_camera_facing()
+	var to_camera: Vector3 = camera.global_position - first_plaque.global_position
+	to_camera.y = 0.0
+	check(
+		is_equal_approx(first_plaque.rotation.y, atan2(to_camera.x, to_camera.z)),
+		"floor plaque remains camera-aligned through yaw changes"
+	)
+	rig.rotation.y = original_yaw
+	labels.update_camera_facing()
 
 
 func _test_layout(c: Node, scene: Node) -> void:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3]
+[gd_scene load_steps=27 format=3]
 
 ; TASK 011.1: full-height modules with animated geometric clipping; no ceiling/physics.
 ; Rooms 6 x 6 m nominal; corridor 12 x 2.5 m nominal. Walls occupy part of these modules.
@@ -12,6 +12,7 @@
 [ext_resource type="Material" path="res://assets/materials/window_frame.tres" id="7_frame"]
 
 [ext_resource type="Script" path="res://scripts/wall_visibility.gd" id="8_walls"]
+[ext_resource type="Script" path="res://scripts/room_labels.gd" id="9_room_labels"]
 
 [sub_resource type="BoxMesh" id="Box_1"]
 size = Vector3(12, 0.2, 8.5)
@@ -80,8 +81,8 @@ rotation_degrees = Vector3(-50, 165, 0)
 light_color = Color(1, 0.99, 0.97, 1)
 light_energy = 0.32
 shadow_enabled = true
-shadow_bias = 0.02
-shadow_normal_bias = 0.25
+shadow_bias = 1.0
+shadow_normal_bias = 2.0
 shadow_blur = 1.5
 directional_shadow_mode = 0
 directional_shadow_max_distance = 45.0
@@ -426,3 +427,6 @@ shadow_enabled = false
 
 [node name="WallVisibility" type="Node" parent="."]
 script = ExtResource("8_walls")
+
+[node name="RoomLabels" type="Node3D" parent="."]
+script = ExtResource("9_room_labels")

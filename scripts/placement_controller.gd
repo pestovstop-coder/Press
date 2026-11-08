@@ -7,6 +7,7 @@ const CELL_SIZE: float = 0.25
 # visual plan modules, not the furniture placement increment.
 const EDITOR_GRID_STEP: float = CELL_SIZE * 2.0
 const GRID_LIFT: float = 0.012
+const PLACEMENT_VISUAL_GROUP: StringName = &"placement_visual"
 const FOOTPRINT_CELLS: Dictionary = {
 	"block": Vector2i(4, 4),
 	# 2m × 1m cells contain the 1.6m × 0.8m legacy desk without moving it.
@@ -57,8 +58,9 @@ func _ready() -> void:
 	add_child(placed)
 	var existing: Node3D = get_node("../TestRoom/OfficeDesk")
 	_register(existing, "office_desk")
+	# The visual grid is parented under Floor; render-only overlays aren't obstacles.
 	for mesh in _meshes(get_node("../TestRoom")):
-		if not existing.is_ancestor_of(mesh):
+		if not existing.is_ancestor_of(mesh) and not mesh.is_in_group(PLACEMENT_VISUAL_GROUP):
 			room_occluders.append(mesh)
 	_build_panel()
 	set_active(false)
@@ -676,6 +678,7 @@ func _create_footprint_marker() -> void:
 	marker_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	front_marker = MeshInstance3D.new()
 	front_marker.name = "PlacementFootprintMarker"
+	front_marker.add_to_group(PLACEMENT_VISUAL_GROUP)
 	front_marker.mesh = ImmediateMesh.new()
 	front_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	front_marker.visible = false
@@ -892,6 +895,7 @@ func _build_grid() -> void:
 	lines.surface_end()
 	grid = MeshInstance3D.new()
 	grid.name = "PlacementGrid"
+	grid.add_to_group(PLACEMENT_VISUAL_GROUP)
 	grid.mesh = lines
 	grid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Parent to the floor so mesh bounds, offset and grid share a coordinate system.
