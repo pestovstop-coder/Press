@@ -221,7 +221,10 @@ func begin_move(object: Node3D) -> void:
 	_set_ghost(object)
 	current_footprint_origin = object.get_meta("footprint_origin_cells")
 	current_footprint_size = _footprint_cells_for_asset(selected_asset, quarter_turns)
-	current_visual_center = _object_bounds_in_floor(object, object.get_meta("bounds")).get_center()
+	var bounds_center: Vector3 = (
+		_object_bounds_in_floor(object, object.get_meta("bounds")).get_center()
+	)
+	current_visual_center = Vector2(bounds_center.x, bounds_center.z)
 	_create_footprint_marker()
 	_set_placement_diagnostic("INVALID_COORDINATES")
 
