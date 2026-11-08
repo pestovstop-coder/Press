@@ -413,7 +413,7 @@ func _run() -> void:
 	click(c, empty)
 	check_idle(c, "R, process and empty click are safe without preview")
 	check(c.placed.get_child_count() == 0, "idle empty click creates nothing")
-	var column: Node = c.panel.get_child(0)
+	var column: Node = c.panel.get_node("Scroll/Column")
 	column.get_child(1).emit_signal("pressed")
 	check(
 		(
@@ -640,7 +640,7 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 	c.set_active(true)
 	await process_frame
 	await process_frame
-	var column: Node = c.panel.get_child(0)
+	var column: Node = c.panel.get_node("Scroll/Column")
 	var block_button: Button = column.get_child(1)
 	var desk_button: Button = column.get_child(2)
 	var count: int = c.placed.get_child_count()
@@ -783,7 +783,7 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 	c.set_active(true)
 	await process_frame
-	var column: Node = c.panel.get_child(0)
+	var column: Node = c.panel.get_node("Scroll/Column")
 	var workstation_button: Button = column.get_child(3)
 	var before_count: int = c.placed.get_child_count()
 	var packed: PackedScene = (

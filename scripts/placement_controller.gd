@@ -438,7 +438,7 @@ func _set_placement_diagnostic(reason: String) -> void:
 	if status == null:
 		return
 	if state == EditorState.MOVING:
-		status.text = "Перемещение · " + reason + " · Esc — вернуть"
+		status.text = "Перемещение · " + _diagnostic_text(reason) + " · Esc — вернуть"
 	elif state == EditorState.PLACING:
 		var asset_name: String = selected_asset
 		match selected_asset:
@@ -448,7 +448,21 @@ func _set_placement_diagnostic(reason: String) -> void:
 				asset_name = "Офисный стол"
 			"employee_workstation":
 				asset_name = "Рабочее место сотрудника"
-		status.text = asset_name + " · " + reason
+		status.text = asset_name + " · " + _diagnostic_text(reason)
+
+
+func _diagnostic_text(reason: String) -> String:
+	# Display strings only; the diagnostic codes remain unchanged for the editor.
+	match reason:
+		"VALID": return "Можно разместить"
+		"INVALID_FOOTPRINT": return "Некорректный размер объекта"
+		"INVALID_COORDINATES": return "Выберите место на полу"
+		"OUT_OF_BOUNDS": return "За пределами помещения"
+		"FURNITURE_COLLISION": return "Здесь находится мебель"
+		"WALL_COLLISION": return "Мешает стена"
+		"OBSTACLE_COLLISION": return "Мешает препятствие"
+		"NO_VALID_PLACEMENT": return "Нет подходящего места"
+		_: return "Размещение недоступно"
 
 
 func _intervals_near(
@@ -1058,42 +1072,76 @@ func _over_panel(point: Vector2) -> bool:
 
 
 func _build_panel() -> void:
+	var style = preload("res://scripts/ui_paper_style.gd")
 	var layer := CanvasLayer.new()
 	add_child(layer)
-	panel = PanelContainer.new()
+	panel = preload("res://scripts/placement_panel.gd").new()
 	panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	panel.position = Vector2(16, 16)
+	panel.mouse_force_pass_scroll_events = false
+	panel.add_theme_stylebox_override("panel", style.box(style.PAPER))
 	layer.add_child(panel)
+	var scroll := ScrollContainer.new()
+	scroll.name = "Scroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	style.scrollbar(scroll)
+	panel.add_child(scroll)
 	var column := VBoxContainer.new()
+	column.name = "Column"
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.mouse_filter = Control.MOUSE_FILTER_PASS
-	panel.add_child(column)
+	column.add_theme_constant_override("separation", 7)
+	scroll.add_child(column)
 	var title := Label.new()
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	title.text = "Расстановка · B — выход"
+	title.text = "РАССТАНОВКА  /  B — ВЫХОД"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", style.NAVY)
 	column.add_child(title)
+	var buttons: Dictionary = {}
 	for asset_id in ["block", "office_desk", "employee_workstation"]:
 		var button := Button.new()
 		match asset_id:
 			"block":
-				button.text = "Блок 1×1×1 м"
+				button.text = "Блок 1×1×1 м\nТестовый объект"
 			"office_desk":
-				button.text = "Офисный стол 1,6×0,8 м"
+				button.text = "Офисный стол 1,6×0,8 м\nОтдельный предмет"
 			"employee_workstation":
-				button.text = "Рабочее место сотрудника"
-		# Native Button owns both text and hit-test: no separately offset label/rect.
-		button.custom_minimum_size = Vector2(280, 44)
+				button.text = "Рабочее место сотрудника\nСтол · кресло · компьютер"
+		# One native Button owns the full visual card and its hit-test.
+		button.custom_minimum_size = Vector2(0, 64)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.mouse_filter = Control.MOUSE_FILTER_STOP
-		button.focus_mode = Control.FOCUS_NONE
+		button.mouse_force_pass_scroll_events = true
+		button.focus_mode = Control.FOCUS_ALL
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.clip_text = true
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		style.button(button)
 		button.pressed.connect(select_asset.bind(asset_id))
 		column.add_child(button)
+		buttons[asset_id] = button
+	var metadata := Label.new()
+	metadata.text = "Комплект: стол, кресло и компьютер.\nДоступно в каталоге. Уровни и профессии не заданы."
+	metadata.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	metadata.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	metadata.add_theme_font_size_override("font_size", 12)
+	metadata.add_theme_color_override("font_color", style.MUTED)
+	column.add_child(metadata)
 	status = Label.new()
 	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.add_theme_font_size_override("font_size", 14)
+	status.add_theme_color_override("font_color", style.NAVY)
 	column.add_child(status)
 	var help := Label.new()
 	help.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	help.text = "ЛКМ: выбрать / поставить\nCtrl+ЛКМ: поставить ещё\nR: 90° · Esc: отменить / выйти"
+	help.add_theme_font_size_override("font_size", 12)
+	help.add_theme_color_override("font_color", style.INK)
 	column.add_child(help)
+	var note = preload("res://scripts/ui_service_note.gd").new()
+	column.add_child(note)
+	panel.call("setup", self, buttons, note)
 
 
 func _material(color: Color) -> StandardMaterial3D:

@@ -1,6 +1,15 @@
 extends CanvasLayer
 ## TASK 026: presentation-only data. Nothing here changes the simulation.
 
+const Style = preload("res://scripts/ui_paper_style.gd")
+const Note = preload("res://scripts/ui_service_note.gd")
+const NOTES := {
+	"Офис": ["Рабочий день начался. Причины пока неизвестны.", "Ситуация стабильна. Определение стабильности уточняется."],
+	"Сотрудники": ["Штатное расписание утверждено. Штат пока не в курсе.", "Ответственный назначен. Ответственность уточняется."],
+	"Редакция": ["Редакция просит комментарий. Руководство просит не комментировать.", "Заголовок утверждён. Содержание на рассмотрении."],
+	"Задачи": ["Пять слов согласовывали три рабочих дня.", "Срок уточнён. Срочность остаётся прежней."],
+	"Документы": ["Три экземпляра. Четвёртый — на всякий случай.", "Замечаний нет. Просьба учесть замечания."]
+}
 const PAPER := Color("e9e1d2")
 const LIGHT := Color("f5f0e6")
 const INK := Color("252a2e")
@@ -41,6 +50,8 @@ var date_label: Label
 var pause_button: Button
 var speed_buttons: Array[Button] = []
 var current_section := "Офис"
+var note_indices: Dictionary = {}
+var current_note := ""
 var paused := false
 var speed := 1
 var minutes := 9.0 * 60.0
@@ -68,15 +79,7 @@ func _process(delta: float) -> void:
 		_update_clock()
 
 func _style(bg: Color, border: Color = LINE, width: int = 1) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.border_color = border
-	s.set_border_width_all(width)
-	s.content_margin_left = 12
-	s.content_margin_right = 12
-	s.content_margin_top = 8
-	s.content_margin_bottom = 8
-	return s
+	return Style.box(bg, border, width)
 
 func _panel(bg: Color) -> PanelContainer:
 	var p := PanelContainer.new()
@@ -100,19 +103,8 @@ func _button(text: String, active: bool = false) -> Button:
 	b.focus_mode = Control.FOCUS_ALL
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
 	b.mouse_force_pass_scroll_events = false
-	b.add_theme_font_size_override("font_size", 15)
-	b.add_theme_color_override("font_color", LIGHT if active else INK)
-	b.add_theme_color_override("font_hover_color", LIGHT)
-	b.add_theme_color_override("font_pressed_color", LIGHT)
-	b.add_theme_color_override("font_focus_color", LIGHT if active else INK)
-	b.add_theme_stylebox_override("normal", _style(NAVY if active else LIGHT, NAVY if active else LINE))
-	b.add_theme_stylebox_override("hover", _style(NAVY, NAVY))
-	b.add_theme_stylebox_override("pressed", _style(RED, RED))
-	var focus := StyleBoxFlat.new()
-	focus.bg_color = Color(0, 0, 0, 0)
-	focus.border_color = RED
-	focus.set_border_width_all(2)
-	b.add_theme_stylebox_override("focus", focus)
+	b.custom_minimum_size = Vector2(44, 44)
+	Style.button(b, active)
 	return b
 
 func _column(parent: Node, separation: int = 8) -> VBoxContainer:
@@ -144,6 +136,7 @@ func _build() -> void:
 	controls.add_theme_constant_override("separation", 4)
 	h.add_child(controls)
 	pause_button = _button("Ⅱ")
+	pause_button.tooltip_text = "Пауза"
 	pause_button.pressed.connect(_toggle_pause)
 	controls.add_child(pause_button)
 	for n in [1, 2, 3]:
@@ -159,10 +152,17 @@ func _build() -> void:
 		box.add_child(_label(metric[0], 11, MUTED))
 		box.add_child(_label(metric[1], 16, NAVY))
 	rail = _panel(PAPER)
-	var menu := _column(rail, 6)
+	var rail_scroll := ScrollContainer.new()
+	rail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	Style.scrollbar(rail_scroll)
+	rail.add_child(rail_scroll)
+	var menu := _column(rail_scroll, 6)
+	menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	menu.add_child(_label("НАВИГАЦИЯ  /  01", 11, MUTED))
 	for section in DATA.keys():
 		var b := _button(section)
+		b.mouse_force_pass_scroll_events = true
+		b.clip_text = true
 		b.custom_minimum_size.y = 46
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.pressed.connect(_show_section.bind(section))
@@ -170,11 +170,13 @@ func _build() -> void:
 		nav_buttons[section] = b
 	menu.add_child(_label("ИНСТРУМЕНТЫ", 11, MUTED))
 	var hint := _label("B  ·  Расстановка\nПКМ  ·  Вращение\nКолесо  ·  Масштаб", 13, MUTED)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	menu.add_child(hint)
 	side = _panel(LIGHT)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	Style.scrollbar(scroll)
 	side.add_child(scroll)
 	side_content = _column(scroll, 10)
 	side_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -199,12 +201,12 @@ func _layout() -> void:
 	var compact := viewport_size.x < 1400
 	var header_height := 78.0 if not compact else 70.0
 	var rail_width := 188.0 if not compact else 156.0
-	var side_width := 320.0 if not compact else 270.0
+	var side_width := 320.0 if not compact else 300.0
 	var bottom_height := 104.0 if not compact else 94.0
 	top.position = Vector2.ZERO
 	top.size = Vector2(viewport_size.x, header_height)
 	rail.position = Vector2(12, header_height + 12)
-	rail.size = Vector2(rail_width, 385)
+	rail.size = Vector2(rail_width, maxf(80, minf(385, viewport_size.y - header_height - bottom_height - 36)))
 	side.position = Vector2(viewport_size.x - side_width - 12, header_height + 12)
 	side.size = Vector2(side_width, maxf(180, viewport_size.y - header_height - bottom_height - 36))
 	bottom.position = Vector2(12, viewport_size.y - bottom_height - 12)
@@ -215,8 +217,12 @@ func _clear_side() -> void:
 		side_content.remove_child(child)
 		child.queue_free()
 
-func _show_section(section: String) -> void:
+func _show_section(section: String, advance_note: bool = true) -> void:
 	current_section = section
+	if advance_note or current_note.is_empty():
+		var index: int = (int(note_indices.get(section, -1)) + 1) % NOTES[section].size()
+		note_indices[section] = index
+		current_note = NOTES[section][index]
 	side.show()
 	for name in nav_buttons:
 		var b: Button = nav_buttons[name]
@@ -231,22 +237,33 @@ func _show_section(section: String) -> void:
 	header.add_child(title)
 	var close := _button("×")
 	close.pressed.connect(side.hide)
+	close.mouse_force_pass_scroll_events = true
 	header.add_child(close)
 	side_content.add_child(_label("ОБЗОР  /  ДЕМО-ДАННЫЕ", 11, MUTED))
 	for item in DATA[section]:
 		var card := _button("%s   %s\n        %s" % [item[0], item[1], item[2]])
 		card.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		card.custom_minimum_size.y = 68
+		card.mouse_force_pass_scroll_events = true
+		card.clip_text = true
+		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.pressed.connect(_show_detail.bind(item))
 		side_content.add_child(card)
 	var foot := _label("Выберите карточку для подробностей", 12, MUTED)
 	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_content.add_child(foot)
+	_add_note()
+
+func _add_note() -> void:
+	var note := Note.new()
+	note.set_note(current_note)
+	side_content.add_child(note)
 
 func _show_detail(item: Array) -> void:
 	_clear_side()
 	var back := _button("←  К списку")
-	back.pressed.connect(_show_section.bind(current_section))
+	back.mouse_force_pass_scroll_events = true
+	back.pressed.connect(_show_section.bind(current_section, false))
 	side_content.add_child(back)
 	side_content.add_child(_label("КАРТОЧКА  /  ДЕМО", 11, MUTED))
 	var title := _label(item[1], 21, NAVY)
@@ -262,7 +279,9 @@ func _show_detail(item: Array) -> void:
 	side_content.add_child(note)
 	var close := _button("Закрыть панель")
 	close.pressed.connect(side.hide)
+	close.mouse_force_pass_scroll_events = true
 	side_content.add_child(close)
+	_add_note()
 
 func _toggle_pause() -> void:
 	paused = not paused
