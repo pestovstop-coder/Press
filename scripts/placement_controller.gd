@@ -7,6 +7,8 @@ const CELL_SIZE: float = 0.25
 # visual plan modules, not the furniture placement increment.
 const EDITOR_GRID_STEP: float = CELL_SIZE * 2.0
 const GRID_LIFT: float = 0.012
+const COLLISION_EPSILON: float = 0.00001
+const SURFACE_SNAP_DISTANCE: float = CELL_SIZE
 const PLACEMENT_VISUAL_GROUP: StringName = &"placement_visual"
 const FOOTPRINT_CELLS: Dictionary = {
 	"block": Vector2i(4, 4),
@@ -36,6 +38,7 @@ var editing: Node3D
 var original_transform: Transform3D
 var current_footprint_origin: Vector2i = Vector2i.ZERO
 var current_footprint_size: Vector2i = Vector2i.ZERO
+var current_visual_center: Vector2 = Vector2.ZERO
 var last_marker_state: Array = []
 var marker_material: StandardMaterial3D
 var editable: Array[Node3D] = []
@@ -218,6 +221,7 @@ func begin_move(object: Node3D) -> void:
 	_set_ghost(object)
 	current_footprint_origin = object.get_meta("footprint_origin_cells")
 	current_footprint_size = _footprint_cells_for_asset(selected_asset, quarter_turns)
+	current_visual_center = _object_bounds_in_floor(object, object.get_meta("bounds")).get_center()
 	_create_footprint_marker()
 	_set_placement_diagnostic("INVALID_COORDINATES")
 
@@ -241,6 +245,7 @@ func _reset_selection() -> void:
 	quarter_turns = 0
 	current_footprint_origin = Vector2i.ZERO
 	current_footprint_size = Vector2i.ZERO
+	current_visual_center = Vector2.ZERO
 	last_marker_state.clear()
 	valid_target = false
 	placement_diagnostic = "IDLE"
@@ -335,66 +340,92 @@ func _obstacle_bounds_in_floor(mesh: MeshInstance3D) -> AABB:
 	return mesh_to_floor * mesh.get_aabb()
 
 
-func _footprint_inside_floor(origin: Vector2i, cells: Vector2i) -> bool:
-	var footprint: Rect2 = _footprint_rect(origin, cells)
+func _object_mesh_bounds_for_transform(
+	object: Node3D, root_transform_in_floor: Transform3D
+) -> Array[AABB]:
+	var result: Array[AABB] = []
+	var root_inverse: Transform3D = object.global_transform.affine_inverse()
+	for mesh in _meshes(object):
+		var mesh_to_root: Transform3D = root_inverse * mesh.global_transform
+		var mesh_bounds_in_root: AABB = mesh_to_root * mesh.get_aabb()
+		result.append(root_transform_in_floor * mesh_bounds_in_root)
+	return result
+
+
+func _object_mesh_bounds_in_floor(object: Node3D) -> Array[AABB]:
+	var root_to_floor: Transform3D = (
+		floor_mesh.global_transform.affine_inverse() * object.global_transform
+	)
+	return _object_mesh_bounds_for_transform(object, root_to_floor)
+
+
+func _mesh_bounds_overlap_any(first: Array[AABB], second: Array[AABB]) -> bool:
+	for first_bounds in first:
+		for second_bounds in second:
+			if _aabbs_overlap(first_bounds, second_bounds):
+				return true
+	return false
+
+
+func _aabbs_overlap(first: AABB, second: AABB) -> bool:
+	# No clearance margin: exact face contact is allowed. Epsilon only absorbs
+	# floating-point noise; positive-volume overlap still blocks placement.
 	return (
-		footprint.position.x >= floor_bounds.position.x
-		and footprint.end.x <= floor_bounds.end.x
-		and footprint.position.y >= floor_bounds.position.z
-		and footprint.end.y <= floor_bounds.end.z
+		first.position.x < second.end.x - COLLISION_EPSILON
+		and first.end.x > second.position.x + COLLISION_EPSILON
+		and first.position.y < second.end.y - COLLISION_EPSILON
+		and first.end.y > second.position.y + COLLISION_EPSILON
+		and first.position.z < second.end.z - COLLISION_EPSILON
+		and first.end.z > second.position.z + COLLISION_EPSILON
 	)
 
 
-func _candidate_invalid_reason(origin: Vector2i, cells: Vector2i, visual_bounds: AABB) -> String:
+func _bounds_inside_floor(bounds: AABB) -> bool:
+	return (
+		bounds.position.x >= floor_bounds.position.x - COLLISION_EPSILON
+		and bounds.end.x <= floor_bounds.end.x + COLLISION_EPSILON
+		and bounds.position.z >= floor_bounds.position.z - COLLISION_EPSILON
+		and bounds.end.z <= floor_bounds.end.z + COLLISION_EPSILON
+	)
+
+
+func _candidate_invalid_reason(
+	cells: Vector2i, visual_bounds: AABB, mesh_bounds: Array[AABB]
+) -> String:
 	var reason: String = ""
 	if cells.x <= 0 or cells.y <= 0:
 		reason = "INVALID_FOOTPRINT"
 	elif not visual_bounds.position.is_finite() or not visual_bounds.size.is_finite():
 		reason = "INVALID_COORDINATES"
-	elif not _footprint_inside_floor(origin, cells):
+	# The cell footprint is a planning envelope/marker, not a physical collider.
+	# Actual GLB mesh bounds determine floor clearance and collision.
+	elif not _bounds_inside_floor(visual_bounds):
 		reason = "OUT_OF_BOUNDS"
-	elif (
-		visual_bounds.position.x < floor_bounds.position.x
-		or visual_bounds.end.x > floor_bounds.end.x
-		or visual_bounds.position.z < floor_bounds.position.z
-		or visual_bounds.end.z > floor_bounds.end.z
-	):
-		reason = "OUT_OF_BOUNDS"
+	elif mesh_bounds.is_empty():
+		reason = "INVALID_COORDINATES"
 	if reason.is_empty():
 		for object in editable:
 			if object == editing:
 				continue
-			if (
-				not object.has_meta("footprint_origin_cells")
-				or not object.has_meta("footprint_cells")
-			):
+			if not object.has_meta("bounds"):
 				reason = "INVALID_FOOTPRINT"
 				break
-			var other_origin: Vector2i = object.get_meta("footprint_origin_cells")
-			var other_cells: Vector2i = object.get_meta("footprint_cells")
-			if other_cells.x <= 0 or other_cells.y <= 0:
-				reason = "INVALID_FOOTPRINT"
-				break
-			if _footprints_overlap(origin, cells, other_origin, other_cells):
+			var other_mesh_bounds: Array[AABB] = _object_mesh_bounds_in_floor(object)
+			if _mesh_bounds_overlap_any(mesh_bounds, other_mesh_bounds):
 				reason = "FURNITURE_COLLISION"
 				break
 	if reason.is_empty():
-		var footprint: Rect2 = _footprint_rect(origin, cells)
 		for mesh in room_occluders:
 			if mesh == floor_mesh:
 				continue
 			var obstacle: AABB = _obstacle_bounds_in_floor(mesh)
-			if (
-				visual_bounds.position.y >= obstacle.end.y
-				or visual_bounds.end.y <= obstacle.position.y
-			):
-				continue
-			var obstacle_rect := Rect2(
-				Vector2(obstacle.position.x, obstacle.position.z),
-				Vector2(obstacle.size.x, obstacle.size.z)
-			)
-			if footprint.intersects(obstacle_rect):
-				reason = "WALL_COLLISION" if mesh.has_meta("cutaway_side") else "OBSTACLE_COLLISION"
+			for candidate_bounds in mesh_bounds:
+				if _aabbs_overlap(candidate_bounds, obstacle):
+					reason = (
+						"WALL_COLLISION" if mesh.has_meta("cutaway_side") else "OBSTACLE_COLLISION"
+					)
+					break
+			if not reason.is_empty():
 				break
 	return "VALID" if reason.is_empty() else reason
 
@@ -417,13 +448,210 @@ func _set_placement_diagnostic(reason: String) -> void:
 		status.text = asset_name + " · " + reason
 
 
+func _intervals_near(
+	first_min: float, first_max: float, second_min: float, second_max: float, margin: float
+) -> bool:
+	return first_min <= second_max + margin and second_min <= first_max + margin
+
+
+func _aabb_contact_axes(first: AABB, second: AABB) -> int:
+	var touches_x: bool = (
+		(
+			absf(first.end.x - second.position.x) <= COLLISION_EPSILON
+			or absf(first.position.x - second.end.x) <= COLLISION_EPSILON
+		)
+		and _intervals_overlap_positive(
+			first.position.y, first.end.y, second.position.y, second.end.y
+		)
+		and _intervals_overlap_positive(
+			first.position.z, first.end.z, second.position.z, second.end.z
+		)
+	)
+	var touches_z: bool = (
+		(
+			absf(first.end.z - second.position.z) <= COLLISION_EPSILON
+			or absf(first.position.z - second.end.z) <= COLLISION_EPSILON
+		)
+		and _intervals_overlap_positive(
+			first.position.y, first.end.y, second.position.y, second.end.y
+		)
+		and _intervals_overlap_positive(
+			first.position.x, first.end.x, second.position.x, second.end.x
+		)
+	)
+	return (1 if touches_x else 0) | (2 if touches_z else 0)
+
+
+func _surface_contact_axes(candidate_bounds: Array[AABB]) -> int:
+	var axes: int = 0
+	for candidate in candidate_bounds:
+		for mesh in room_occluders:
+			if mesh != floor_mesh:
+				axes |= _aabb_contact_axes(candidate, _obstacle_bounds_in_floor(mesh))
+	for object in editable:
+		if object == editing:
+			continue
+		for candidate in candidate_bounds:
+			for other in _object_mesh_bounds_in_floor(object):
+				axes |= _aabb_contact_axes(candidate, other)
+	return int((axes & 1) != 0) + int((axes & 2) != 0)
+
+
+func _append_snap_target(targets: Array[float], target: float, base: float) -> void:
+	if absf(target - base) > SURFACE_SNAP_DISTANCE + COLLISION_EPSILON:
+		return
+	for existing in targets:
+		if absf(existing - target) <= COLLISION_EPSILON:
+			return
+	targets.append(target)
+
+
+func _surface_snap_center(
+	bounds: AABB, cells: Vector2i, turns: int, base_center: Vector2
+) -> Vector2:
+	var orientation := Basis(Vector3.UP, turns * PI / 2.0)
+	var rotated_bounds: AABB = Transform3D(orientation, Vector3.ZERO) * bounds
+	var half_x: float = rotated_bounds.size.x * 0.5
+	var half_z: float = rotated_bounds.size.z * 0.5
+	var base_bounds := AABB(
+		Vector3(base_center.x - half_x, floor_top, base_center.y - half_z),
+		Vector3(rotated_bounds.size.x, rotated_bounds.size.y, rotated_bounds.size.z)
+	)
+	var x_targets: Array[float] = [base_center.x]
+	var z_targets: Array[float] = [base_center.y]
+	for mesh in room_occluders:
+		if mesh == floor_mesh:
+			continue
+		var obstacle: AABB = _obstacle_bounds_in_floor(mesh)
+		if not _intervals_near(
+			base_bounds.position.y,
+			base_bounds.end.y,
+			obstacle.position.y,
+			obstacle.end.y,
+			COLLISION_EPSILON
+		):
+			continue
+		if _intervals_near(
+			base_bounds.position.z,
+			base_bounds.end.z,
+			obstacle.position.z,
+			obstacle.end.z,
+			SURFACE_SNAP_DISTANCE
+		):
+			_append_snap_target(x_targets, obstacle.position.x - half_x, base_center.x)
+			_append_snap_target(x_targets, obstacle.end.x + half_x, base_center.x)
+		if _intervals_near(
+			base_bounds.position.x,
+			base_bounds.end.x,
+			obstacle.position.x,
+			obstacle.end.x,
+			SURFACE_SNAP_DISTANCE
+		):
+			_append_snap_target(z_targets, obstacle.position.z - half_z, base_center.y)
+			_append_snap_target(z_targets, obstacle.end.z + half_z, base_center.y)
+	for object in editable:
+		if object == editing:
+			continue
+		var other_bounds: AABB = _object_bounds_in_floor(object, object.get_meta("bounds"))
+		if not _intervals_near(
+			base_bounds.position.y,
+			base_bounds.end.y,
+			other_bounds.position.y,
+			other_bounds.end.y,
+			COLLISION_EPSILON
+		):
+			continue
+		if _intervals_near(
+			base_bounds.position.z,
+			base_bounds.end.z,
+			other_bounds.position.z,
+			other_bounds.end.z,
+			SURFACE_SNAP_DISTANCE
+		):
+			_append_snap_target(x_targets, other_bounds.position.x - half_x, base_center.x)
+			_append_snap_target(x_targets, other_bounds.end.x + half_x, base_center.x)
+		if _intervals_near(
+			base_bounds.position.x,
+			base_bounds.end.x,
+			other_bounds.position.x,
+			other_bounds.end.x,
+			SURFACE_SNAP_DISTANCE
+		):
+			_append_snap_target(z_targets, other_bounds.position.z - half_z, base_center.y)
+			_append_snap_target(z_targets, other_bounds.end.z + half_z, base_center.y)
+
+	var found: bool = false
+	var best_center: Vector2 = base_center
+	var best_contact_axes: int = 0
+	var best_distance: float = INF
+	for x in x_targets:
+		for z in z_targets:
+			var candidate_center := Vector2(x, z)
+			var offset: Vector2 = candidate_center - base_center
+			if offset.length_squared() <= COLLISION_EPSILON * COLLISION_EPSILON:
+				continue
+			if offset.length_squared() > SURFACE_SNAP_DISTANCE * SURFACE_SNAP_DISTANCE:
+				continue
+			var origin: Vector2i = _footprint_origin_for_center(candidate_center, cells)
+			var transform: Transform3D = _preview_transform_for_footprint(
+				bounds, origin, cells, turns, candidate_center
+			)
+			var candidate_mesh_bounds: Array[AABB] = _object_mesh_bounds_for_transform(
+				preview, transform
+			)
+			if (
+				_candidate_invalid_reason(cells, transform * bounds, candidate_mesh_bounds)
+				!= "VALID"
+			):
+				continue
+			var contact_axes: int = _surface_contact_axes(candidate_mesh_bounds)
+			if contact_axes == 0:
+				continue
+			var distance: float = offset.length_squared()
+			if (
+				contact_axes > best_contact_axes
+				or (contact_axes == best_contact_axes and distance < best_distance)
+			):
+				found = true
+				best_center = candidate_center
+				best_contact_axes = contact_axes
+				best_distance = distance
+	return best_center if found else base_center
+
+
 func _find_nearest_valid_origin(cells: Vector2i, bounds: AABB, turns: int) -> Variant:
 	if cells.x <= 0 or cells.y <= 0:
 		return null
-	var min_x: int = ceili(floor_bounds.position.x / CELL_SIZE)
-	var min_z: int = ceili(floor_bounds.position.z / CELL_SIZE)
-	var max_x: int = floori(floor_bounds.end.x / CELL_SIZE) - cells.x
-	var max_z: int = floori(floor_bounds.end.z / CELL_SIZE) - cells.y
+	var orientation := Basis(Vector3.UP, turns * PI / 2.0)
+	var rotated_bounds: AABB = Transform3D(orientation, Vector3.ZERO) * bounds
+	var min_x: int = ceili(
+		(
+			(floor_bounds.position.x + rotated_bounds.size.x * 0.5) / CELL_SIZE
+			- cells.x * 0.5
+			- COLLISION_EPSILON
+		)
+	)
+	var min_z: int = ceili(
+		(
+			(floor_bounds.position.z + rotated_bounds.size.z * 0.5) / CELL_SIZE
+			- cells.y * 0.5
+			- COLLISION_EPSILON
+		)
+	)
+	var max_x: int = floori(
+		(
+			(floor_bounds.end.x - rotated_bounds.size.x * 0.5) / CELL_SIZE
+			- cells.x * 0.5
+			+ COLLISION_EPSILON
+		)
+	)
+	var max_z: int = floori(
+		(
+			(floor_bounds.end.z - rotated_bounds.size.z * 0.5) / CELL_SIZE
+			- cells.y * 0.5
+			+ COLLISION_EPSILON
+		)
+	)
 	var found: bool = false
 	var best_origin: Vector2i = Vector2i.ZERO
 	var best_distance: float = INF
@@ -434,7 +662,10 @@ func _find_nearest_valid_origin(cells: Vector2i, bounds: AABB, turns: int) -> Va
 				bounds, origin, cells, turns
 			)
 			var visual_bounds: AABB = local_transform * bounds
-			if _candidate_invalid_reason(origin, cells, visual_bounds) != "VALID":
+			var candidate_mesh_bounds: Array[AABB] = _object_mesh_bounds_for_transform(
+				preview, local_transform
+			)
+			if _candidate_invalid_reason(cells, visual_bounds, candidate_mesh_bounds) != "VALID":
 				continue
 			var distance: float = _footprint_center(origin, cells).length_squared()
 			if distance < best_distance:
@@ -444,18 +675,29 @@ func _find_nearest_valid_origin(cells: Vector2i, bounds: AABB, turns: int) -> Va
 	return best_origin if found else null
 
 
-func _apply_preview_at_origin(origin: Vector2i, cells: Vector2i) -> void:
+func _apply_preview_at_origin(
+	origin: Vector2i, cells: Vector2i, visual_center: Variant = null
+) -> void:
 	current_footprint_origin = origin
 	current_footprint_size = cells
+	if typeof(visual_center) == TYPE_VECTOR2:
+		current_visual_center = visual_center
+	else:
+		current_visual_center = _footprint_center(origin, cells)
 	var bounds: AABB = preview.get_meta("bounds")
 	var local_transform: Transform3D = _preview_transform_for_footprint(
-		bounds, current_footprint_origin, current_footprint_size, quarter_turns
+		bounds,
+		current_footprint_origin,
+		current_footprint_size,
+		quarter_turns,
+		current_visual_center
 	)
 	preview.global_transform = floor_mesh.global_transform * local_transform
 	preview.visible = true
 	var visual_bounds: AABB = local_transform * bounds
+	var mesh_bounds: Array[AABB] = _object_mesh_bounds_for_transform(preview, local_transform)
 	placement_diagnostic = _candidate_invalid_reason(
-		current_footprint_origin, current_footprint_size, visual_bounds
+		current_footprint_size, visual_bounds, mesh_bounds
 	)
 	valid_target = placement_diagnostic == "VALID"
 	_set_placement_diagnostic(placement_diagnostic)
@@ -487,16 +729,22 @@ func target_inside_floor(point: Vector3) -> bool:
 	if preview == null:
 		return false
 	var cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
-	var origin: Vector2i = _footprint_origin_for_center(Vector2(point.x, point.z), cells)
-	return _footprint_inside_floor(origin, cells)
+	var center := Vector2(point.x, point.z)
+	var origin: Vector2i = _footprint_origin_for_center(center, cells)
+	var transform: Transform3D = _preview_transform_for_footprint(
+		preview.get_meta("bounds"), origin, cells, quarter_turns, center
+	)
+	return _bounds_inside_floor(transform * preview.get_meta("bounds"))
 
 
 func _preview_transform_for_footprint(
-	bounds: AABB, origin: Vector2i, cells: Vector2i, turns: int
+	bounds: AABB, origin: Vector2i, cells: Vector2i, turns: int, visual_center: Variant = null
 ) -> Transform3D:
 	var orientation := Basis(Vector3.UP, turns * PI / 2.0)
 	var rotated_bounds: AABB = Transform3D(orientation, Vector3.ZERO) * bounds
 	var center: Vector2 = _footprint_center(origin, cells)
+	if typeof(visual_center) == TYPE_VECTOR2:
+		center = visual_center
 	var root_position := Vector3(
 		center.x - rotated_bounds.get_center().x,
 		floor_top - rotated_bounds.position.y,
@@ -517,12 +765,10 @@ func _update_preview(screen_point: Vector2) -> void:
 	# last candidate until the pointer returns to the room instead of rejecting it.
 	if _over_panel(screen_point):
 		if current_footprint_size.x > 0 and current_footprint_size.y > 0:
-			var anchor: Vector2 = _footprint_center(
-				current_footprint_origin, current_footprint_size
-			)
+			var anchor: Vector2 = current_visual_center
 			var rotated_cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
 			_apply_preview_at_origin(
-				_footprint_origin_for_center(anchor, rotated_cells), rotated_cells
+				_footprint_origin_for_center(anchor, rotated_cells), rotated_cells, anchor
 			)
 		return
 	valid_target = false
@@ -544,7 +790,11 @@ func _update_preview(screen_point: Vector2) -> void:
 		return
 	var cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
 	var origin: Vector2i = _footprint_origin_for_center(Vector2(hit.x, hit.z), cells)
-	_apply_preview_at_origin(origin, cells)
+	var base_center: Vector2 = _footprint_center(origin, cells)
+	var bounds: AABB = preview.get_meta("bounds")
+	var visual_center: Vector2 = _surface_snap_center(bounds, cells, quarter_turns, base_center)
+	origin = _footprint_origin_for_center(visual_center, cells)
+	_apply_preview_at_origin(origin, cells, visual_center)
 
 
 func place_block(keep_placing: bool = false) -> void:

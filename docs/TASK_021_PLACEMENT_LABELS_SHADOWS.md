@@ -1,5 +1,7 @@
 # TASK 021 — placement, room labels and shadow settings
 
+> Historical report. The placement-overlay diagnosis and shadow notes remain relevant, but TASK 022 supersedes the footprint collision policy and replaces the threshold plaques with static floor text. See `TASK_022_FURNITURE_CLEARANCE_FLOOR_LABELS.md` for current behavior and acceptance steps.
+
 ## Placement diagnosis and change
 
 The source-level cause of the generic `OBSTACLE_COLLISION` was the editor grid itself. `_ready()` called `_build_grid()` before collecting meshes recursively from `TestRoom`; the grid is a `MeshInstance3D` child of `Floor`, so it entered `room_occluders`. Its line-mesh AABB spans the floor and sits just above it. Candidate validation correctly skipped the floor node, but not this editor-only overlay; because the grid has no `cutaway_side` metadata, its intersection was reported as `OBSTACLE_COLLISION`. This affected every asset and made the nearest-valid-footprint search find no cells.

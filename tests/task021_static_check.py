@@ -48,19 +48,23 @@ for path in (ROOT / "scripts").rglob("*.gd"):
 check(not shadow_overrides, "no GDScript overrides Sun bias settings")
 
 check('[node name="RoomLabels" type="Node3D" parent="."]' in scene,
-      "room label component is attached to the main scene")
+      "floor-label component is attached to the main scene")
 for token, desc in [
-    ('"office_101"', "office 101 plaque anchor"),
-    ('"office_102"', "office 102 plaque anchor"),
-    ('"corridor_main"', "shared corridor plaque anchor"),
-    ('Vector3(-3.0, 0.0, 2.15)', "office 101 marker is at its documented entrance"),
-    ('Vector3(3.0, 0.0, 2.15)', "office 102 marker is at its documented entrance"),
-    ('Vector3(0.0, 0.0, 3.35)', "corridor marker is within the shared corridor"),
-    ('"КАБИНЕТ", "101"', "editable office 101 label text"),
-    ('"КАБИНЕТ", "102"', "editable office 102 label text"),
-    ('"ОБЩИЙ", "КОРИДОР"', "editable corridor label text"),
-    ('plaque.rotation.y = atan2(to_camera.x, to_camera.z)', "plaque yaw follows camera"),
+    ('"КАБИНЕТ 101"', "editable office 101 floor text"),
+    ('"КАБИНЕТ 102"', "editable office 102 floor text"),
+    ('"ОБЩИЙ КОРИДОР"', "editable corridor floor text"),
+    ('Vector3(-3.0, FLOOR_OFFSET, -1.95)', "office 101 label sits in its planned aisle"),
+    ('Vector3(3.0, FLOOR_OFFSET, -1.95)', "office 102 label sits in its planned aisle"),
+    ('Vector3(0.0, FLOOR_OFFSET, 3.15)', "corridor label sits in the shared corridor"),
+    ('label.billboard = BaseMaterial3D.BILLBOARD_DISABLED', "floor text is world-static, not billboarded"),
+    ('label.no_depth_test = false', "floor text is naturally occluded by furniture"),
+    ('label.rotation = Vector3(-PI * 0.5, 0.0, 0.0)', "Label3D lies horizontally on the floor"),
+    ('const FLOOR_OFFSET: float = 0.004', "a fixed vertical offset avoids z-fighting"),
+    ('const TEXT_COLOR := Color(0.22, 0.28, 0.30, 0.46)', "text remains subdued and translucent"),
 ]:
     check(token in labels, desc)
+check('camera' not in labels.lower(), "floor labels do not depend on camera orientation")
+check('BoxMesh.new()' not in labels and 'PlaqueBacking' not in labels,
+      "labels have no plate, backing, border, or 3D decoration")
 
 print("Static checks passed. Godot parsing, placement execution, and visual acceptance are not covered.")

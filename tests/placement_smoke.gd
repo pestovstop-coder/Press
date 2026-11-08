@@ -95,7 +95,7 @@ func _test_cell_helpers(c: Node) -> void:
 				Vector2i(0, 0), Vector2i(2, 2), Vector2i(2, 0), Vector2i(2, 2)
 			)
 		),
-		"integer-cell overlap rejects shared cells but allows edge-adjacent items"
+		"integer-cell helper distinguishes overlapping and edge-adjacent planning rectangles"
 	)
 	check(
 		c._footprint_rect(Vector2i(0, 0), Vector2i(2, 2)).is_equal_approx(
@@ -119,6 +119,157 @@ func _test_cell_helpers(c: Node) -> void:
 		),
 		"registered legacy desk cells contain its full visual bounds"
 	)
+
+
+func _test_furniture_clearances(scene: Node, c: Node, camera: Camera3D) -> void:
+	c.set_active(true)
+	var created: Array[Node3D] = []
+	var shared_wall: MeshInstance3D = scene.get_node("TestRoom/SharedWall")
+	var shared_bounds: AABB = c._obstacle_bounds_in_floor(shared_wall)
+	var first_target := Vector3(0.875, 0.0, -1.0)
+	c.select_asset("employee_workstation")
+	var first_screen: Vector2 = camera.unproject_position(first_target)
+	c._update_preview(first_screen)
+	var first_preview_bounds: AABB = c._object_bounds_in_floor(
+		c.preview, c.preview.get_meta("bounds")
+	)
+	print(
+		"Clearance workstation/shared wall (mesh AABB): ",
+		first_preview_bounds.position.x - shared_bounds.end.x,
+		"m"
+	)
+	check(
+		c.valid_target and absf(first_preview_bounds.position.x - shared_bounds.end.x) < 0.0001,
+		"workstation surface-snaps flush to the straight shared wall"
+	)
+	var first_transform: Transform3D = c.preview.global_transform
+	c.click_at(first_screen)
+	var first_station: Node3D = c.placed.get_child(c.placed.get_child_count() - 1)
+	created.append(first_station)
+	check(
+		first_station.global_transform.is_equal_approx(first_transform),
+		"confirmed wall placement exactly matches its preview transform"
+	)
+
+	var second_target := Vector3(2.375, 0.0, -1.0)
+	c.select_asset("employee_workstation")
+	var second_screen: Vector2 = camera.unproject_position(second_target)
+	c._update_preview(second_screen)
+	var first_bounds: AABB = c._object_bounds_in_floor(
+		first_station, first_station.get_meta("bounds")
+	)
+	var second_bounds: AABB = c._object_bounds_in_floor(c.preview, c.preview.get_meta("bounds"))
+	print("Clearance workstation/workstation: ", second_bounds.position.x - first_bounds.end.x, "m")
+	check(
+		c.valid_target and absf(second_bounds.position.x - first_bounds.end.x) < 0.0001,
+		"two workstations may share a face when their visual mesh bounds only touch"
+	)
+	c.click_at(second_screen)
+	var second_station: Node3D = c.placed.get_child(c.placed.get_child_count() - 1)
+	created.append(second_station)
+
+	var desk_target := Vector3(4.0, 0.0, -1.0)
+	c.select_asset("office_desk")
+	var desk_screen: Vector2 = camera.unproject_position(desk_target)
+	c._update_preview(desk_screen)
+	var second_bounds_after: AABB = c._object_bounds_in_floor(
+		second_station, second_station.get_meta("bounds")
+	)
+	var desk_bounds_preview: AABB = c._object_bounds_in_floor(
+		c.preview, c.preview.get_meta("bounds")
+	)
+	print(
+		"Clearance workstation/legacy desk: ",
+		desk_bounds_preview.position.x - second_bounds_after.end.x,
+		"m"
+	)
+	check(
+		(
+			c.valid_target
+			and absf(desk_bounds_preview.position.x - second_bounds_after.end.x) < 0.0001
+		),
+		"legacy desk can surface-snap beside a workstation using its own bounds"
+	)
+	c.click_at(desk_screen)
+	var legacy_desk: Node3D = c.placed.get_child(c.placed.get_child_count() - 1)
+	created.append(legacy_desk)
+
+	c.select_asset("employee_workstation")
+	var corner_screen: Vector2 = camera.unproject_position(Vector3(5.0, 0.0, -3.5))
+	c._update_preview(corner_screen)
+	var corner_bounds: AABB = c._object_bounds_in_floor(c.preview, c.preview.get_meta("bounds"))
+	var east_wall: AABB = c._obstacle_bounds_in_floor(scene.get_node("TestRoom/EastWall"))
+	var rear_wall: AABB = c._obstacle_bounds_in_floor(scene.get_node("TestRoom/RearRightPierB"))
+	print(
+		"Clearance workstation/east wall, rear wall: ",
+		corner_bounds.end.x - east_wall.position.x,
+		"m, ",
+		rear_wall.end.z - corner_bounds.position.z,
+		"m"
+	)
+	check(
+		(
+			c.valid_target
+			and absf(corner_bounds.end.x - east_wall.position.x) < 0.0001
+			and absf(corner_bounds.position.z - rear_wall.end.z) < 0.0001
+		),
+		"workstation fits the east-rear corner with both visual bounds flush"
+	)
+	var corner_transform: Transform3D = c.preview.global_transform
+	c.click_at(corner_screen)
+	var corner_station: Node3D = c.placed.get_child(c.placed.get_child_count() - 1)
+	created.append(corner_station)
+	check(
+		corner_station.global_transform.is_equal_approx(corner_transform),
+		"corner installation matches its valid preview transform"
+	)
+
+	c.select_asset("employee_workstation")
+	key(c, KEY_R)
+	var rotated_screen: Vector2 = camera.unproject_position(Vector3(0.75, 0.0, -2.5))
+	c._update_preview(rotated_screen)
+	var rotated_bounds: AABB = c._object_bounds_in_floor(c.preview, c.preview.get_meta("bounds"))
+	print(
+		"Clearance rotated workstation/shared wall: ",
+		rotated_bounds.position.x - shared_bounds.end.x,
+		"m"
+	)
+	check(
+		(
+			c.valid_target
+			and c.current_footprint_size == Vector2i(6, 7)
+			and absf(rotated_bounds.position.x - shared_bounds.end.x) < 0.0001
+		),
+		"rotated workstation snaps its rotated visual bounds to the same wall"
+	)
+	key(c, KEY_ESCAPE)
+
+	c.begin_move(first_station)
+	var move_screen: Vector2 = camera.unproject_position(Vector3(0.875, 0.0, -2.75))
+	c._update_preview(move_screen)
+	var moved_bounds: AABB = c._object_bounds_in_floor(
+		first_station, first_station.get_meta("bounds")
+	)
+	print(
+		"Clearance moved workstation/shared wall: ",
+		moved_bounds.position.x - shared_bounds.end.x,
+		"m"
+	)
+	check(
+		c.valid_target and absf(moved_bounds.position.x - shared_bounds.end.x) < 0.0001,
+		"moving an installed workstation can return to a flush wall position"
+	)
+	var expected_moved_transform: Transform3D = first_station.global_transform
+	c.click_at(move_screen)
+	check(
+		first_station.global_transform.is_equal_approx(expected_moved_transform),
+		"confirmed wall move keeps the validated preview transform"
+	)
+	for object in created:
+		c.editable.erase(object)
+		c.placed.remove_child(object)
+		object.free()
+	c.set_active(false)
 
 
 func _test_cell_placement(c: Node, camera: Camera3D) -> void:
@@ -181,14 +332,14 @@ func _test_cell_placement(c: Node, camera: Camera3D) -> void:
 			Vector3(-4.75, 0, -3.55),
 			false,
 			"FURNITURE_COLLISION",
-			"furniture footprint overlap is rejected",
+			"installed furniture mesh bounds overlap is rejected",
 		],
 		[Vector3(-5.5, 0, -1.2), false, "WALL_COLLISION", "authored wall overlap is rejected"],
 		[
 			Vector3(5.9, 0, 3.9),
 			false,
 			"OUT_OF_BOUNDS",
-			"cells extending past the floor boundary are rejected",
+			"visual bounds extending past the floor boundary are rejected",
 		],
 	]
 	for entry in checks:
@@ -217,7 +368,7 @@ func _test_cell_placement(c: Node, camera: Camera3D) -> void:
 				and vertices[1].x == footprint_rect.position.x
 				and vertices[1].z == footprint_rect.end.y
 			),
-			"marker border coordinates equal the collision/floor-test rectangle"
+			"marker border matches its planning rectangle, separate from mesh collision bounds"
 		)
 		if not entry[1]:
 			click(c, point)
@@ -239,6 +390,7 @@ func _run() -> void:
 	_test_layout(c, scene)
 	_test_room_labels(scene, rig, camera, c)
 	_test_cell_helpers(c)
+	_test_furniture_clearances(scene, c, camera)
 	await _test_cell_placement(c, camera)
 	var camera_before: Transform3D = rig.global_transform
 	check(
@@ -769,6 +921,17 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 	var monitor_point: Vector3 = placed.to_global(Vector3(-0.23, 1.46, -0.56))
 	var picked: Node3D = c._pick_ray(monitor_point + Vector3.UP * 2.0, Vector3.DOWN)
 	check(picked == placed, "mesh-level picking finds the new workstation")
+	var tabletop_point: Vector3 = placed.to_global(Vector3(0.1, 0.949, -0.386))
+	check(
+		c._pick_ray(tabletop_point + Vector3.UP * 2.0, Vector3.DOWN) == placed,
+		"mesh-level picking finds the workstation tabletop after its quarter-turn"
+	)
+	var side_direction: Vector3 = placed.global_basis * Vector3.RIGHT
+	var side_point: Vector3 = placed.to_global(Vector3(0.86, 0.8, -0.386))
+	check(
+		c._pick_ray(side_point + side_direction * 2.0, -side_direction) == placed,
+		"mesh-level picking finds an accessible workstation side after its quarter-turn"
+	)
 	var saved_transform: Transform3D = placed.global_transform
 	c.begin_move(placed)
 	c._update_preview(target)
@@ -822,42 +985,49 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 	)
 
 
-func _test_room_labels(scene: Node, rig: Node3D, camera: Camera3D, c: Node) -> void:
+func _test_room_labels(scene: Node, rig: Node3D, _camera: Camera3D, c: Node) -> void:
 	var labels: Node3D = scene.get_node("RoomLabels")
-	check(labels.plaques.size() == 3, "first scene has three zone wayfinding plaques")
+	check(labels.labels.size() == 3, "first scene has three static floor text labels")
 	var expected: Array = [
-		["office_101", "КАБИНЕТ", "101", Vector3(-3, 0, 2.15)],
-		["office_102", "КАБИНЕТ", "102", Vector3(3, 0, 2.15)],
-		["corridor_main", "ОБЩИЙ", "КОРИДОР", Vector3(0, 0, 3.35)],
+		["office_101", "КАБИНЕТ 101", Vector3(-3, 0.004, -1.95)],
+		["office_102", "КАБИНЕТ 102", Vector3(3, 0.004, -1.95)],
+		["corridor_main", "ОБЩИЙ КОРИДОР", Vector3(0, 0.004, 3.15)],
 	]
 	for entry in expected:
-		var plaque: Node3D = labels.get_node("RoomLabel_" + entry[0])
+		var label: Label3D = labels.get_node("FloorLabel_" + entry[0]) as Label3D
 		check(
-			plaque.get_meta("zone_id") == entry[0] and plaque.position.is_equal_approx(entry[3]),
-			"plaque is anchored to the documented zone " + entry[0]
+			label.get_meta("zone_id") == entry[0] and label.position.is_equal_approx(entry[2]),
+			"flat text is anchored in the planned aisle for " + entry[0]
 		)
-		var room_type: Label3D = plaque.get_node("RoomType") as Label3D
-		var room_name: Label3D = plaque.get_node("RoomName") as Label3D
+		check(label.text == entry[1], "editable floor text matches " + entry[0])
 		check(
-			room_type.text == entry[1] and room_name.text == entry[2],
-			"plaque text is editable and hierarchical for " + entry[0]
+			(
+				label.billboard == BaseMaterial3D.BILLBOARD_DISABLED
+				and label.rotation.is_equal_approx(Vector3(-PI * 0.5, 0, 0))
+			),
+			"floor text is horizontal and has no camera-facing billboard"
 		)
 		check(
-			not c.room_occluders.has(plaque.get_node("PlaqueBacking")),
-			"wayfinding plaque does not enter furniture obstacle checks"
+			(
+				label.no_depth_test == false
+				and not c.room_occluders.has(label)
+				and not c.editable.has(label)
+			),
+			"depth-tested floor text neither ray-picks nor enters obstacle checks"
 		)
+		var floor_world_top: float = c.floor_mesh.to_global(Vector3(0, c.floor_top, 0)).y
+		check(
+			is_equal_approx(label.global_position.y - floor_world_top, 0.004),
+			"label offset is fixed above the authored floor surface"
+		)
+	var before_orbit: Transform3D = labels.labels[0].global_transform
 	var original_yaw: float = rig.rotation.y
-	var first_plaque: Node3D = labels.plaques[0]
 	rig.rotation.y += PI * 0.5
-	labels.update_camera_facing()
-	var to_camera: Vector3 = camera.global_position - first_plaque.global_position
-	to_camera.y = 0.0
 	check(
-		is_equal_approx(first_plaque.rotation.y, atan2(to_camera.x, to_camera.z)),
-		"floor plaque remains camera-aligned through yaw changes"
+		labels.labels[0].global_transform.is_equal_approx(before_orbit),
+		"floor text remains fixed in world coordinates during camera orbit"
 	)
 	rig.rotation.y = original_yaw
-	labels.update_camera_facing()
 
 
 func _test_layout(c: Node, scene: Node) -> void:
