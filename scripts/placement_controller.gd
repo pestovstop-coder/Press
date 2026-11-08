@@ -6,6 +6,10 @@ const STEP: float = 0.5
 const BLOCK_SIZE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const GRID_LIFT: float = 0.012
 const DESK: PackedScene = preload("res://assets/models/furniture/desks/office_desk.glb")
+const EMPLOYEE_WORKSTATION: PackedScene = preload(
+	"res://assets/models/furniture/desks/employee_workstation.glb"
+)
+const FRONT_MARKER_ASSETS: Array[String] = ["office_desk", "employee_workstation"]
 
 var active: bool = false
 var quarter_turns: int = 0
@@ -13,6 +17,7 @@ var valid_target: bool = false
 var state: EditorState = EditorState.IDLE
 var selected_asset: String = ""
 var grid: MeshInstance3D
+var front_marker: MeshInstance3D
 var preview: Node3D
 var placed: Node3D
 var floor_top: float
@@ -108,7 +113,7 @@ func set_active(enabled: bool) -> void:
 
 
 func select_asset(asset_id: String) -> void:
-	if not active or asset_id not in ["block", "office_desk"]:
+	if not active or asset_id not in ["block", "office_desk", "employee_workstation"]:
 		return
 	cancel_operation()
 	selected_asset = asset_id
@@ -117,17 +122,38 @@ func select_asset(asset_id: String) -> void:
 	_update_preview(get_viewport().get_mouse_position())
 
 
+func _instantiate_asset(asset_id: String) -> Node3D:
+	match asset_id:
+		"block":
+			return _make_block(false)
+		"office_desk":
+			return DESK.instantiate()
+		"employee_workstation":
+			return EMPLOYEE_WORKSTATION.instantiate()
+	return null
+
+
 func _new_preview() -> void:
 	valid_target = false
-	preview = _make_block(false) if selected_asset == "block" else DESK.instantiate()
+	preview = _instantiate_asset(selected_asset)
+	if preview == null:
+		return
 	preview.name = "PlacementPreview"
 	add_child(preview)
 	preview.set_meta("asset_id", selected_asset)
-	preview.set_meta("bounds", _object_bounds(preview))
+	var bounds: AABB = _object_bounds(preview)
+	preview.set_meta("bounds", bounds)
 	quarter_turns = 0
 	_set_ghost(preview)
 	preview.visible = false
-	status.text = "Блок" if selected_asset == "block" else "Офисный стол"
+	_create_front_marker(bounds)
+	match selected_asset:
+		"block":
+			status.text = "Блок"
+		"office_desk":
+			status.text = "Офисный стол"
+		"employee_workstation":
+			status.text = "Рабочее место сотрудника"
 
 
 func _discard_preview() -> void:
@@ -135,6 +161,7 @@ func _discard_preview() -> void:
 	if is_instance_valid(preview):
 		preview.visible = false
 		preview.queue_free()
+	_hide_front_marker()
 
 
 func _register(object: Node3D, asset_id: String) -> void:
@@ -154,6 +181,8 @@ func begin_move(object: Node3D) -> void:
 	selected_asset = str(object.get_meta("asset_id"))
 	quarter_turns = posmod(roundi(object.rotation.y / (PI / 2.0)), 4)
 	_set_ghost(object)
+	var bounds: AABB = object.get_meta("bounds")
+	_create_front_marker(bounds)
 	status.text = "Перемещение · Esc — вернуть"
 
 
@@ -168,6 +197,7 @@ func cancel_operation() -> void:
 
 
 func _reset_selection() -> void:
+	_hide_front_marker()
 	state = EditorState.IDLE
 	preview = null
 	editing = null
@@ -199,6 +229,8 @@ func target_inside_floor(point: Vector3) -> bool:
 
 func _update_preview(screen_point: Vector2) -> void:
 	valid_target = false
+	if is_instance_valid(front_marker):
+		front_marker.visible = false
 	if preview == null:
 		return
 	preview.visible = false
@@ -227,6 +259,9 @@ func _update_preview(screen_point: Vector2) -> void:
 	var bounds: AABB = preview.get_meta("bounds")
 	point.y -= bounds.position.y
 	preview.global_position = floor_mesh.to_global(point)
+	if is_instance_valid(front_marker) and selected_asset in FRONT_MARKER_ASSETS:
+		front_marker.global_transform = preview.global_transform
+		front_marker.visible = preview.visible and valid_target
 
 
 func place_block(keep_placing: bool = false) -> void:
@@ -237,7 +272,9 @@ func place_block(keep_placing: bool = false) -> void:
 		_restore_materials()
 		editing.visible = true
 	else:
-		var object: Node3D = _make_block(false) if selected_asset == "block" else DESK.instantiate()
+		var object: Node3D = _instantiate_asset(selected_asset)
+		if object == null:
+			return
 		placed.add_child(object)
 		object.global_transform = preview.global_transform
 		_register(object, selected_asset)
@@ -347,6 +384,51 @@ func _restore_materials() -> void:
 	ghost_records.clear()
 
 
+func _create_front_marker(bounds: AABB) -> void:
+	_hide_front_marker()
+	if selected_asset not in FRONT_MARKER_ASSETS:
+		return
+	var column_count: int = maxi(1, ceili(bounds.size.x / STEP))
+	var row_count: int = maxi(1, ceili(bounds.size.z / STEP))
+	var footprint_width: float = column_count * STEP
+	var footprint_depth: float = row_count * STEP
+	# Catalogued furniture origins are at the center of the floor footprint.
+	var center_x: float = 0.0
+	var marker_y: float = bounds.position.y + GRID_LIFT + 0.004
+	var base_z: float = footprint_depth * 0.5 + 0.025
+	var mesh := ImmediateMesh.new()
+	var material := _material(Color(1.0, 0.68, 0.12, 1.0))
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, material)
+	for column in range(column_count):
+		var center := Vector3(
+			center_x - footprint_width * 0.5 + (column + 0.5) * STEP, marker_y, base_z
+		)
+		var half_width: float = minf(0.12, STEP * 0.28)
+		var tip_z: float = base_z + 0.16
+		# One arrow per front-row cell; local +Z is the asset's front.
+		mesh.surface_add_vertex(center + Vector3(-half_width, 0.0, 0.0))
+		mesh.surface_add_vertex(center + Vector3(0.0, 0.0, tip_z - base_z))
+		mesh.surface_add_vertex(center + Vector3(half_width, 0.0, 0.0))
+	mesh.surface_end()
+	front_marker = MeshInstance3D.new()
+	front_marker.name = "PlacementFrontMarker"
+	front_marker.mesh = mesh
+	front_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	front_marker.visible = false
+	add_child(front_marker)
+
+
+func _hide_front_marker() -> void:
+	if is_instance_valid(front_marker):
+		front_marker.visible = false
+		if front_marker.get_parent() == self:
+			remove_child(front_marker)
+		front_marker.queue_free()
+	front_marker = null
+
+
 func _over_panel(point: Vector2) -> bool:
 	# Input positions are viewport coordinates; Control rects are local.
 	# Include CanvasLayer transforms rather than comparing unlike coordinate spaces.
@@ -368,11 +450,17 @@ func _build_panel() -> void:
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.text = "Расстановка · B — выход"
 	column.add_child(title)
-	for asset_id in ["block", "office_desk"]:
+	for asset_id in ["block", "office_desk", "employee_workstation"]:
 		var button := Button.new()
-		button.text = "Блок 1×1×1 м" if asset_id == "block" else "Офисный стол 1,6×0,8 м"
+		match asset_id:
+			"block":
+				button.text = "Блок 1×1×1 м"
+			"office_desk":
+				button.text = "Офисный стол 1,6×0,8 м"
+			"employee_workstation":
+				button.text = "Рабочее место сотрудника"
 		# Native Button owns both text and hit-test: no separately offset label/rect.
-		button.custom_minimum_size = Vector2(260, 44)
+		button.custom_minimum_size = Vector2(280, 44)
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.mouse_filter = Control.MOUSE_FILTER_STOP
 		button.focus_mode = Control.FOCUS_NONE

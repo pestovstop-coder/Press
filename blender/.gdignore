@@ -1,0 +1,1 @@
+# Keep Blender source files out of Godot's project scan; game assets are exported GLB files.

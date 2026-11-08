@@ -138,6 +138,13 @@ func _run() -> void:
 	key(c, KEY_R)
 	var desk_screen: Vector2 = camera.unproject_position(Vector3(-4.5, 0, -1.5))
 	c._update_preview(desk_screen)
+	check(
+		(
+			c.front_marker.visible
+			and c.front_marker.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size() == 12
+		),
+		"desk front row has one marker arrow for each of its four 0.5m cells"
+	)
 	click(c, desk_screen)
 	check(c.placed.get_child_count() == 3, "desk placed once")
 	var desk: Node3D = c.placed.get_child(2)
@@ -273,6 +280,7 @@ func _run() -> void:
 		"idle Escape exits; editing has not moved camera"
 	)
 	await _test_task008(c, original_desk, camera)
+	await _test_employee_workstation(c, camera)
 	print("Placement smoke test failures: ", failures)
 	quit(0 if failures == 0 else 1)
 
@@ -430,6 +438,162 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 		"Ctrl MOVING confirms without cloning furniture"
 	)
 	key(c, KEY_ESCAPE)
+
+
+func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
+	c.set_active(true)
+	await process_frame
+	var column: Node = c.panel.get_child(0)
+	var workstation_button: Button = column.get_child(3)
+	var before_count: int = c.placed.get_child_count()
+	var packed: PackedScene = (
+		load("res://assets/models/furniture/desks/employee_workstation.glb") as PackedScene
+	)
+	var pristine: Node3D = packed.instantiate()
+	var source_materials: Array = materials_snapshot(c, pristine)
+	pristine.free()
+	gui_click(workstation_button, workstation_button.size / 2.0)
+	check(
+		c.selected_asset == "employee_workstation" and c.state == Placement.EditorState.PLACING,
+		"workstation catalogue button starts placement preview"
+	)
+	check(
+		c.status.text == "Рабочее место сотрудника",
+		"workstation preview displays its localized name"
+	)
+	var preview: Node3D = c.preview
+	var bounds: AABB = preview.get_meta("bounds")
+	check(
+		bounds.size.distance_to(Vector3(1.4766, 1.4756, 1.3145)) < 0.0001,
+		"workstation preview uses imported full-kit bounds without scaling"
+	)
+	var meshes: Array[MeshInstance3D] = c._meshes(preview)
+	var surface_total: int = 0
+	for mesh in meshes:
+		surface_total += mesh.mesh.get_surface_count()
+	check(
+		meshes.size() == 6 and surface_total == 7,
+		"preview retains all six meshes and seven surfaces"
+	)
+	check(
+		c.ghost_records.size() == 6,
+		"ghost overrides are per preview mesh, not shared source resources"
+	)
+	var target: Vector2 = camera.unproject_position(Vector3(4.5, 0, -2.5))
+	c._update_preview(target)
+	check(c.valid_target and preview.visible, "full-size workstation preview fits the floor grid")
+	check(
+		(
+			is_instance_valid(c.front_marker)
+			and c.front_marker.visible
+			and c.front_marker.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		),
+		"front marker appears over valid preview and never casts a shadow"
+	)
+	var arrays: Array = c.front_marker.mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	check(vertices.size() == 9, "three marker arrows identify all three cells in the front row")
+	var lowest_z: float = INF
+	var highest_z: float = -INF
+	for vertex in vertices:
+		lowest_z = minf(lowest_z, vertex.z)
+		highest_z = maxf(highest_z, vertex.z)
+	check(highest_z > lowest_z, "front arrows point along local +Z")
+	var marker_basis: Basis = c.front_marker.global_transform.basis
+	check(
+		c.front_marker.global_transform.is_equal_approx(preview.global_transform),
+		"marker follows preview transform"
+	)
+	key(c, KEY_R)
+	c._update_preview(target)
+	check(
+		(
+			c.quarter_turns == 1
+			and c.front_marker.global_transform.basis.is_equal_approx(
+				preview.global_transform.basis
+			)
+			and not c.front_marker.global_transform.basis.is_equal_approx(marker_basis)
+		),
+		"front marker rotates with the model on R"
+	)
+	var moved_target: Vector2 = camera.unproject_position(Vector3(3.5, 0, -1.5))
+	c._update_preview(moved_target)
+	check(
+		c.front_marker.global_position.is_equal_approx(preview.global_position),
+		"front marker follows mouse-driven preview movement"
+	)
+	click(c, moved_target)
+	check(
+		c.placed.get_child_count() == before_count + 1 and c.state == Placement.EditorState.IDLE,
+		"LMB places one independent employee workstation"
+	)
+	check(
+		c.front_marker == null or not c.front_marker.visible,
+		"front marker disappears after placement"
+	)
+	var placed: Node3D = c.placed.get_child(before_count)
+	check(
+		placed.get_meta("asset_id") == "employee_workstation" and c.editable.has(placed),
+		"placed workstation is registered for picking and moving"
+	)
+	var world_bounds: AABB = placed.global_transform * placed.get_meta("bounds")
+	check(
+		absf(world_bounds.position.y) < 0.003,
+		"placed workstation bounds rest on floor without scale compensation"
+	)
+	check(
+		materials_snapshot(c, placed) == source_materials,
+		"installed GLB keeps its source materials; ghost overrides stayed on preview only"
+	)
+	var monitor_point: Vector3 = placed.to_global(Vector3(-0.23, 1.46, -0.56))
+	var picked: Node3D = c._pick_ray(monitor_point + Vector3.UP * 2.0, Vector3.DOWN)
+	check(picked == placed, "mesh-level picking finds the new workstation")
+	var saved_transform: Transform3D = placed.global_transform
+	c.begin_move(placed)
+	c._update_preview(target)
+	check(
+		c.state == Placement.EditorState.MOVING and c.front_marker.visible,
+		"moving a placed workstation shows the front marker"
+	)
+	check(
+		c.front_marker.global_transform.is_equal_approx(placed.global_transform),
+		"move marker tracks the moving model"
+	)
+	key(c, KEY_ESCAPE)
+	check(
+		(
+			placed.global_transform.is_equal_approx(saved_transform)
+			and materials_snapshot(c, placed) == source_materials
+			and (c.front_marker == null or not c.front_marker.visible)
+		),
+		"cancelled move restores transform/materials and hides marker"
+	)
+	c.begin_move(placed)
+	c._update_preview(target)
+	click(c, target)
+	check(
+		(
+			c.placed.get_child_count() == before_count + 1
+			and c.editable.has(placed)
+			and c.state == Placement.EditorState.IDLE
+		),
+		"confirmed move reuses the placed workstation without cloning"
+	)
+	c.select_asset("employee_workstation")
+	c._update_preview(target)
+	check(
+		c.front_marker.visible, "new workstation operation has a visible marker before cancellation"
+	)
+	key(c, KEY_ESCAPE)
+	check(
+		c.front_marker == null or not c.front_marker.visible,
+		"Escape cancellation removes the placement marker"
+	)
+	c.set_active(false)
+	check(
+		not c.grid.visible and (c.front_marker == null or not c.front_marker.visible),
+		"leaving placement mode hides grid and marker"
+	)
 
 
 func _test_layout(c: Node, scene: Node) -> void:
