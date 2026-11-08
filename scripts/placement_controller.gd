@@ -1,16 +1,24 @@
 extends Node3D
-## TASK 008: precise picking and Ctrl-repeat, retaining IDLE / PLACING / MOVING.
+## TASK 016: cell-based furniture placement, retaining IDLE / PLACING / MOVING.
 enum EditorState { IDLE, PLACING, MOVING }
 
-const STEP: float = 0.5
-const BLOCK_SIZE: Vector3 = Vector3(1.0, 1.0, 1.0)
+const CELL_SIZE: float = 0.25
+# The editor's 0.5m reference lines denote two-by-two placement cells; they are
+# visual plan modules, not the furniture placement increment.
+const EDITOR_GRID_STEP: float = CELL_SIZE * 2.0
 const GRID_LIFT: float = 0.012
+const FOOTPRINT_CELLS: Dictionary = {
+	"block": Vector2i(4, 4),
+	# 2m × 1m cells contain the 1.6m × 0.8m legacy desk without moving it.
+	"office_desk": Vector2i(8, 4),
+	# Existing plan reserves 1.6m × 1.4m per workplace; round the full-kit envelope up to cells.
+	"employee_workstation": Vector2i(7, 6),
+}
+const BLOCK_SIZE: Vector3 = Vector3(1.0, 1.0, 1.0)
 const DESK: PackedScene = preload("res://assets/models/furniture/desks/office_desk.glb")
 const EMPLOYEE_WORKSTATION: PackedScene = preload(
 	"res://assets/models/furniture/desks/employee_workstation.glb"
 )
-const FRONT_MARKER_ASSETS: Array[String] = ["office_desk", "employee_workstation"]
-
 var active: bool = false
 var quarter_turns: int = 0
 var valid_target: bool = false
@@ -24,6 +32,10 @@ var floor_top: float
 var floor_bounds: AABB
 var editing: Node3D
 var original_transform: Transform3D
+var current_footprint_origin: Vector2i = Vector2i.ZERO
+var current_footprint_size: Vector2i = Vector2i.ZERO
+var last_marker_state: Array = []
+var marker_material: StandardMaterial3D
 var editable: Array[Node3D] = []
 var room_occluders: Array[MeshInstance3D] = []
 var face_cache: Dictionary = {}
@@ -146,7 +158,7 @@ func _new_preview() -> void:
 	quarter_turns = 0
 	_set_ghost(preview)
 	preview.visible = false
-	_create_front_marker(bounds)
+	_create_footprint_marker()
 	match selected_asset:
 		"block":
 			status.text = "Блок"
@@ -164,9 +176,24 @@ func _discard_preview() -> void:
 	_hide_front_marker()
 
 
-func _register(object: Node3D, asset_id: String) -> void:
+func _register(
+	object: Node3D, asset_id: String, footprint_origin: Variant = null, turns: int = -1
+) -> void:
+	var bounds: AABB = _object_bounds(object)
+	var object_turns: int = turns
+	if object_turns < 0:
+		object_turns = posmod(roundi(object.rotation.y / (PI / 2.0)), 4)
+	var cells: Vector2i = _footprint_cells_for_asset(asset_id, object_turns)
+	var bounds_in_floor: AABB = _object_bounds_in_floor(object, bounds)
+	var origin: Vector2i
+	if typeof(footprint_origin) == TYPE_VECTOR2I:
+		origin = footprint_origin
+	else:
+		origin = _origin_covering_bounds(bounds_in_floor, cells)
 	object.set_meta("asset_id", asset_id)
-	object.set_meta("bounds", _object_bounds(object))
+	object.set_meta("bounds", bounds)
+	object.set_meta("footprint_cells", cells)
+	object.set_meta("footprint_origin_cells", origin)
 	editable.append(object)
 
 
@@ -181,8 +208,9 @@ func begin_move(object: Node3D) -> void:
 	selected_asset = str(object.get_meta("asset_id"))
 	quarter_turns = posmod(roundi(object.rotation.y / (PI / 2.0)), 4)
 	_set_ghost(object)
-	var bounds: AABB = object.get_meta("bounds")
-	_create_front_marker(bounds)
+	current_footprint_origin = object.get_meta("footprint_origin_cells")
+	current_footprint_size = _footprint_cells_for_asset(selected_asset, quarter_turns)
+	_create_footprint_marker()
 	status.text = "Перемещение · Esc — вернуть"
 
 
@@ -203,28 +231,172 @@ func _reset_selection() -> void:
 	editing = null
 	selected_asset = ""
 	quarter_turns = 0
+	current_footprint_origin = Vector2i.ZERO
+	current_footprint_size = Vector2i.ZERO
+	last_marker_state.clear()
 	valid_target = false
 	status.text = "Ничего не выбрано"
 
 
+func _round_cell_index(value: float) -> int:
+	# Halfway values consistently round toward +infinity, including negatives.
+	return floori(value + 0.5)
+
+
+func _footprint_cells_for_asset(asset_id: String, turns: int = 0) -> Vector2i:
+	var cells: Vector2i = FOOTPRINT_CELLS.get(asset_id, Vector2i.ZERO)
+	return Vector2i(cells.y, cells.x) if posmod(turns, 2) == 1 else cells
+
+
+func _footprint_origin_for_center(center: Vector2, cells: Vector2i) -> Vector2i:
+	var half_span := Vector2(cells.x * 0.5, cells.y * 0.5)
+	return Vector2i(
+		_round_cell_index(center.x / CELL_SIZE - half_span.x),
+		_round_cell_index(center.y / CELL_SIZE - half_span.y)
+	)
+
+
+func _footprint_center(origin: Vector2i, cells: Vector2i) -> Vector2:
+	return Vector2((origin.x + cells.x * 0.5) * CELL_SIZE, (origin.y + cells.y * 0.5) * CELL_SIZE)
+
+
+func _footprint_rect(origin: Vector2i, cells: Vector2i) -> Rect2:
+	return Rect2(
+		Vector2(origin.x * CELL_SIZE, origin.y * CELL_SIZE),
+		Vector2(cells.x * CELL_SIZE, cells.y * CELL_SIZE)
+	)
+
+
+func _footprints_overlap(
+	first_origin: Vector2i, first_size: Vector2i, second_origin: Vector2i, second_size: Vector2i
+) -> bool:
+	return (
+		first_origin.x < second_origin.x + second_size.x
+		and first_origin.x + first_size.x > second_origin.x
+		and first_origin.y < second_origin.y + second_size.y
+		and first_origin.y + first_size.y > second_origin.y
+	)
+
+
+func _origin_covering_bounds(bounds: AABB, cells: Vector2i) -> Vector2i:
+	# Existing hand-placed furniture is registered without being moved. Cell
+	# boundaries are integer multiples of CELL_SIZE; include every cell touched
+	# by the complete visual AABB.
+	var epsilon: float = 0.00001
+	var min_x: int = floori(bounds.position.x / CELL_SIZE + epsilon)
+	var min_z: int = floori(bounds.position.z / CELL_SIZE + epsilon)
+	var max_x: int = ceili(bounds.end.x / CELL_SIZE - epsilon) - 1
+	var max_z: int = ceili(bounds.end.z / CELL_SIZE - epsilon) - 1
+	if max_x - min_x + 1 > cells.x or max_z - min_z + 1 > cells.y:
+		return _footprint_origin_for_center(
+			Vector2(
+				bounds.position.x + bounds.size.x * 0.5, bounds.position.z + bounds.size.z * 0.5
+			),
+			cells
+		)
+	return Vector2i(min_x, min_z)
+
+
+func _object_bounds_in_floor(object: Node3D, bounds: AABB) -> AABB:
+	var object_to_floor: Transform3D = (
+		floor_mesh.global_transform.affine_inverse() * object.global_transform
+	)
+	return object_to_floor * bounds
+
+
+func _obstacle_bounds_in_floor(mesh: MeshInstance3D) -> AABB:
+	# Camera cutaway changes wall meshes for presentation only. Use their authored
+	# boxes for placement so a shortened visual wall never becomes passable.
+	var wall_visibility: Node = get_node_or_null("../WallVisibility")
+	if wall_visibility != null:
+		var originals: Dictionary = wall_visibility.get("originals")
+		if originals.has(mesh):
+			var original: Dictionary = originals[mesh]
+			var size: Vector3 = original["size"]
+			var center: Vector3 = original["position"]
+			var local_box := AABB(center - size * 0.5, size)
+			var parent: Node3D = mesh.get_parent() as Node3D
+			var parent_to_floor: Transform3D = (
+				floor_mesh.global_transform.affine_inverse() * parent.global_transform
+			)
+			return parent_to_floor * local_box
+	var mesh_to_floor: Transform3D = (
+		floor_mesh.global_transform.affine_inverse() * mesh.global_transform
+	)
+	return mesh_to_floor * mesh.get_aabb()
+
+
+func _footprint_inside_floor(origin: Vector2i, cells: Vector2i) -> bool:
+	var footprint: Rect2 = _footprint_rect(origin, cells)
+	return (
+		footprint.position.x >= floor_bounds.position.x
+		and footprint.end.x <= floor_bounds.end.x
+		and footprint.position.y >= floor_bounds.position.z
+		and footprint.end.y <= floor_bounds.end.z
+	)
+
+
+func _candidate_is_valid(origin: Vector2i, cells: Vector2i, visual_bounds: AABB) -> bool:
+	if not _footprint_inside_floor(origin, cells):
+		return false
+	if (
+		visual_bounds.position.x < floor_bounds.position.x
+		or visual_bounds.end.x > floor_bounds.end.x
+		or visual_bounds.position.z < floor_bounds.position.z
+		or visual_bounds.end.z > floor_bounds.end.z
+	):
+		return false
+	for object in editable:
+		if object == editing:
+			continue
+		var other_origin: Vector2i = object.get_meta("footprint_origin_cells")
+		var other_cells: Vector2i = object.get_meta("footprint_cells")
+		if _footprints_overlap(origin, cells, other_origin, other_cells):
+			return false
+	var footprint: Rect2 = _footprint_rect(origin, cells)
+	for mesh in room_occluders:
+		if mesh == floor_mesh:
+			continue
+		var obstacle: AABB = _obstacle_bounds_in_floor(mesh)
+		if visual_bounds.position.y >= obstacle.end.y or visual_bounds.end.y <= obstacle.position.y:
+			continue
+		var obstacle_rect := Rect2(
+			Vector2(obstacle.position.x, obstacle.position.z),
+			Vector2(obstacle.size.x, obstacle.size.z)
+		)
+		if footprint.intersects(obstacle_rect):
+			return false
+	return true
+
+
 func snapped_floor_point(local_hit: Vector3) -> Vector3:
-	return Vector3(snappedf(local_hit.x, STEP), floor_top, snappedf(local_hit.z, STEP))
+	return Vector3(
+		_round_cell_index(local_hit.x / CELL_SIZE) * CELL_SIZE,
+		floor_top,
+		_round_cell_index(local_hit.z / CELL_SIZE) * CELL_SIZE
+	)
 
 
 func target_inside_floor(point: Vector3) -> bool:
-	# Only a floor-edge check, no furniture/wall collision or occupancy checks.
 	if preview == null:
 		return false
-	var bounds: AABB = preview.get_meta("bounds")
-	var rotated: AABB = (
-		Transform3D(Basis(Vector3.UP, quarter_turns * PI / 2.0), Vector3.ZERO) * bounds
+	var cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
+	var origin: Vector2i = _footprint_origin_for_center(Vector2(point.x, point.z), cells)
+	return _footprint_inside_floor(origin, cells)
+
+
+func _preview_transform_for_footprint(
+	bounds: AABB, origin: Vector2i, cells: Vector2i, turns: int
+) -> Transform3D:
+	var orientation := Basis(Vector3.UP, turns * PI / 2.0)
+	var rotated_bounds: AABB = Transform3D(orientation, Vector3.ZERO) * bounds
+	var center: Vector2 = _footprint_center(origin, cells)
+	var root_position := Vector3(
+		center.x - rotated_bounds.get_center().x,
+		floor_top - rotated_bounds.position.y,
+		center.y - rotated_bounds.get_center().z
 	)
-	return (
-		point.x + rotated.position.x >= floor_bounds.position.x
-		and point.x + rotated.end.x <= floor_bounds.end.x
-		and point.z + rotated.position.z >= floor_bounds.position.z
-		and point.z + rotated.end.z <= floor_bounds.end.z
-	)
+	return Transform3D(orientation, root_position)
 
 
 func _update_preview(screen_point: Vector2) -> void:
@@ -236,16 +408,16 @@ func _update_preview(screen_point: Vector2) -> void:
 	preview.visible = false
 	if not active or _over_panel(screen_point):
 		return
-	var origin: Vector3 = floor_mesh.to_local(camera.project_ray_origin(screen_point))
+	var ray_origin: Vector3 = floor_mesh.to_local(camera.project_ray_origin(screen_point))
 	var direction: Vector3 = (
 		floor_mesh.global_basis.inverse() * camera.project_ray_normal(screen_point)
 	)
 	if absf(direction.y) < 0.00001:
 		return
-	var distance: float = (floor_top - origin.y) / direction.y
+	var distance: float = (floor_top - ray_origin.y) / direction.y
 	if distance < 0.0:
 		return
-	var hit: Vector3 = origin + direction * distance
+	var hit: Vector3 = ray_origin + direction * distance
 	if (
 		hit.x < floor_bounds.position.x
 		or hit.x > floor_bounds.end.x
@@ -253,15 +425,22 @@ func _update_preview(screen_point: Vector2) -> void:
 		or hit.z > floor_bounds.end.z
 	):
 		return
-	var point: Vector3 = snapped_floor_point(hit)
-	valid_target = target_inside_floor(point)
-	preview.visible = valid_target
+	current_footprint_size = _footprint_cells_for_asset(selected_asset, quarter_turns)
+	current_footprint_origin = _footprint_origin_for_center(
+		Vector2(hit.x, hit.z), current_footprint_size
+	)
 	var bounds: AABB = preview.get_meta("bounds")
-	point.y -= bounds.position.y
-	preview.global_position = floor_mesh.to_global(point)
-	if is_instance_valid(front_marker) and selected_asset in FRONT_MARKER_ASSETS:
-		front_marker.global_transform = preview.global_transform
-		front_marker.visible = preview.visible and valid_target
+	var local_transform: Transform3D = _preview_transform_for_footprint(
+		bounds, current_footprint_origin, current_footprint_size, quarter_turns
+	)
+	preview.global_transform = floor_mesh.global_transform * local_transform
+	preview.visible = true
+	var visual_bounds: AABB = local_transform * bounds
+	valid_target = _candidate_is_valid(
+		current_footprint_origin, current_footprint_size, visual_bounds
+	)
+	if is_instance_valid(front_marker):
+		_update_footprint_marker(current_footprint_origin, current_footprint_size, valid_target)
 
 
 func place_block(keep_placing: bool = false) -> void:
@@ -270,6 +449,8 @@ func place_block(keep_placing: bool = false) -> void:
 		return
 	if state == EditorState.MOVING:
 		_restore_materials()
+		editing.set_meta("footprint_origin_cells", current_footprint_origin)
+		editing.set_meta("footprint_cells", current_footprint_size)
 		editing.visible = true
 	else:
 		var object: Node3D = _instantiate_asset(selected_asset)
@@ -277,7 +458,7 @@ func place_block(keep_placing: bool = false) -> void:
 			return
 		placed.add_child(object)
 		object.global_transform = preview.global_transform
-		_register(object, selected_asset)
+		_register(object, selected_asset, current_footprint_origin, quarter_turns)
 		if keep_placing:
 			# Keep only the independent ghost, not the new furniture, active.
 			# Its model, position and quarter-turn remain unchanged.
@@ -296,7 +477,7 @@ func _pick_ray(origin: Vector3, direction: Vector3) -> Node3D:
 	var nearest: float = INF
 	var result: Node3D
 	# No physics bodies/layers/masks exist in this editor. Static room meshes
-	# occlude this visual ray without introducing placement collisions.
+	# occlude this visual ray; placement uses separate cell/AABB checks.
 	for mesh in room_occluders:
 		nearest = minf(nearest, _mesh_ray_distance(mesh, origin, direction))
 	for object in editable:
@@ -384,49 +565,125 @@ func _restore_materials() -> void:
 	ghost_records.clear()
 
 
-func _create_front_marker(bounds: AABB) -> void:
+func _create_footprint_marker() -> void:
 	_hide_front_marker()
-	if selected_asset not in FRONT_MARKER_ASSETS:
+	if selected_asset not in FOOTPRINT_CELLS:
 		return
-	var column_count: int = maxi(1, ceili(bounds.size.x / STEP))
-	var row_count: int = maxi(1, ceili(bounds.size.z / STEP))
-	var footprint_width: float = column_count * STEP
-	var footprint_depth: float = row_count * STEP
-	# Catalogued furniture origins are at the center of the floor footprint.
-	var center_x: float = 0.0
-	var marker_y: float = bounds.position.y + GRID_LIFT + 0.004
-	var base_z: float = footprint_depth * 0.5 + 0.025
-	var mesh := ImmediateMesh.new()
-	var material := _material(Color(1.0, 0.68, 0.12, 1.0))
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, material)
-	for column in range(column_count):
-		var center := Vector3(
-			center_x - footprint_width * 0.5 + (column + 0.5) * STEP, marker_y, base_z
-		)
-		var half_width: float = minf(0.12, STEP * 0.28)
-		var tip_z: float = base_z + 0.16
-		# One arrow per front-row cell; local +Z is the asset's front.
-		mesh.surface_add_vertex(center + Vector3(-half_width, 0.0, 0.0))
-		mesh.surface_add_vertex(center + Vector3(0.0, 0.0, tip_z - base_z))
-		mesh.surface_add_vertex(center + Vector3(half_width, 0.0, 0.0))
-	mesh.surface_end()
+	marker_material = _material(Color(0.12, 0.92, 0.38, 1.0))
+	marker_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	marker_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	front_marker = MeshInstance3D.new()
-	front_marker.name = "PlacementFrontMarker"
-	front_marker.mesh = mesh
+	front_marker.name = "PlacementFootprintMarker"
+	front_marker.mesh = ImmediateMesh.new()
 	front_marker.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	front_marker.visible = false
-	add_child(front_marker)
+	floor_mesh.add_child(front_marker)
+	last_marker_state.clear()
+
+
+func _update_footprint_marker(origin: Vector2i, cells: Vector2i, allowed: bool) -> void:
+	front_marker.set_meta("footprint_origin_cells", origin)
+	front_marker.set_meta("footprint_cells", cells)
+	front_marker.set_meta("allowed", allowed)
+	var state_key: Array = [origin, cells, quarter_turns, allowed]
+	if state_key == last_marker_state:
+		front_marker.visible = true
+		return
+	last_marker_state = state_key
+	marker_material.albedo_color = (
+		Color(0.12, 0.92, 0.38, 1.0) if allowed else Color(1.0, 0.18, 0.14, 1.0)
+	)
+	var mesh: ImmediateMesh = front_marker.mesh as ImmediateMesh
+	mesh.clear_surfaces()
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES, marker_material)
+	var low_x: float = origin.x * CELL_SIZE
+	var low_z: float = origin.y * CELL_SIZE
+	var high_x: float = low_x + cells.x * CELL_SIZE
+	var high_z: float = low_z + cells.y * CELL_SIZE
+	var marker_y: float = floor_top + GRID_LIFT + 0.004
+	# Every quarter-meter occupied cell is shown; the 0.5m room lines remain
+	# only a separate two-cell plan-module reference.
+	for column in range(cells.x + 1):
+		var x: float = low_x + column * CELL_SIZE
+		mesh.surface_add_vertex(Vector3(x, marker_y, low_z))
+		mesh.surface_add_vertex(Vector3(x, marker_y, high_z))
+	for row in range(cells.y + 1):
+		var z: float = low_z + row * CELL_SIZE
+		mesh.surface_add_vertex(Vector3(low_x, marker_y, z))
+		mesh.surface_add_vertex(Vector3(high_x, marker_y, z))
+	var direction: Vector2
+	var arrow_count: int
+	match posmod(quarter_turns, 4):
+		0:
+			direction = Vector2(0, 1)
+			arrow_count = cells.x
+			for i in range(arrow_count):
+				_draw_front_arrow(
+					mesh,
+					Vector2(
+						(origin.x + i + 0.5) * CELL_SIZE, (origin.y + cells.y - 0.5) * CELL_SIZE
+					),
+					direction,
+					marker_y
+				)
+		1:
+			direction = Vector2(1, 0)
+			arrow_count = cells.y
+			for i in range(arrow_count):
+				_draw_front_arrow(
+					mesh,
+					Vector2(
+						(origin.x + cells.x - 0.5) * CELL_SIZE, (origin.y + i + 0.5) * CELL_SIZE
+					),
+					direction,
+					marker_y
+				)
+		2:
+			direction = Vector2(0, -1)
+			arrow_count = cells.x
+			for i in range(arrow_count):
+				_draw_front_arrow(
+					mesh,
+					Vector2((origin.x + i + 0.5) * CELL_SIZE, (origin.y + 0.5) * CELL_SIZE),
+					direction,
+					marker_y
+				)
+		_:
+			direction = Vector2(-1, 0)
+			arrow_count = cells.y
+			for i in range(arrow_count):
+				_draw_front_arrow(
+					mesh,
+					Vector2((origin.x + 0.5) * CELL_SIZE, (origin.y + i + 0.5) * CELL_SIZE),
+					direction,
+					marker_y
+				)
+	front_marker.set_meta("front_direction", Vector2i(roundi(direction.x), roundi(direction.y)))
+	mesh.surface_end()
+	front_marker.visible = true
+
+
+func _draw_front_arrow(mesh: ImmediateMesh, center: Vector2, direction: Vector2, y: float) -> void:
+	var tip: Vector2 = center + direction * CELL_SIZE * 0.38
+	var back: Vector2 = tip - direction * CELL_SIZE * 0.22
+	var side: Vector2 = Vector2(-direction.y, direction.x) * CELL_SIZE * 0.12
+	mesh.surface_add_vertex(Vector3(center.x, y, center.y))
+	mesh.surface_add_vertex(Vector3(tip.x, y, tip.y))
+	mesh.surface_add_vertex(Vector3(tip.x, y, tip.y))
+	mesh.surface_add_vertex(Vector3(back.x + side.x, y, back.y + side.y))
+	mesh.surface_add_vertex(Vector3(tip.x, y, tip.y))
+	mesh.surface_add_vertex(Vector3(back.x - side.x, y, back.y - side.y))
 
 
 func _hide_front_marker() -> void:
 	if is_instance_valid(front_marker):
 		front_marker.visible = false
-		if front_marker.get_parent() == self:
-			remove_child(front_marker)
+		if front_marker.get_parent() == floor_mesh:
+			floor_mesh.remove_child(front_marker)
 		front_marker.queue_free()
 	front_marker = null
+	marker_material = null
+	last_marker_state.clear()
 
 
 func _over_panel(point: Vector2) -> bool:
@@ -518,12 +775,16 @@ func _build_grid() -> void:
 	var low: Vector3 = floor_bounds.position
 	var high: Vector3 = floor_bounds.end
 	var y: float = floor_top + GRID_LIFT
-	for i in range(int(ceilf(low.x / STEP)), int(floorf(high.x / STEP)) + 1):
-		var x: float = i * STEP
+	for i in range(
+		int(ceilf(low.x / EDITOR_GRID_STEP)), int(floorf(high.x / EDITOR_GRID_STEP)) + 1
+	):
+		var x: float = i * EDITOR_GRID_STEP
 		lines.surface_add_vertex(Vector3(x, y, low.z))
 		lines.surface_add_vertex(Vector3(x, y, high.z))
-	for i in range(int(ceilf(low.z / STEP)), int(floorf(high.z / STEP)) + 1):
-		var z: float = i * STEP
+	for i in range(
+		int(ceilf(low.z / EDITOR_GRID_STEP)), int(floorf(high.z / EDITOR_GRID_STEP)) + 1
+	):
+		var z: float = i * EDITOR_GRID_STEP
 		lines.surface_add_vertex(Vector3(low.x, y, z))
 		lines.surface_add_vertex(Vector3(high.x, y, z))
 	lines.surface_end()

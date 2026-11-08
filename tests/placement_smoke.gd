@@ -58,6 +58,115 @@ func materials_snapshot(c: Node, object: Node3D) -> Array:
 	return result
 
 
+func _test_cell_helpers(c: Node) -> void:
+	check(is_equal_approx(Placement.CELL_SIZE, 0.25), "placement has one 0.25m cell size")
+	check(
+		(
+			c._footprint_cells_for_asset("block") == Vector2i(4, 4)
+			and c._footprint_cells_for_asset("office_desk") == Vector2i(8, 4)
+			and c._footprint_cells_for_asset("employee_workstation") == Vector2i(7, 6)
+		),
+		"asset footprints use integer cells, including the full workstation kit"
+	)
+	check(
+		c._footprint_cells_for_asset("office_desk", 1) == Vector2i(4, 8),
+		"quarter-turn swaps a rectangular footprint"
+	)
+	check(
+		(
+			c._round_cell_index(2.49) == 2
+			and c._round_cell_index(2.5) == 3
+			and c._round_cell_index(-2.49) == -2
+			and c._round_cell_index(-2.5) == -2
+			and c._round_cell_index(-2.51) == -3
+		),
+		"negative snapping is deterministic, including exact half-cell ties"
+	)
+	check(
+		c.snapped_floor_point(Vector3(-0.125, 0, -0.125)).is_equal_approx(
+			Vector3(0, c.floor_top, 0)
+		),
+		"negative half-cell coordinates snap deterministically toward positive values"
+	)
+	check(
+		(
+			c._footprints_overlap(Vector2i(0, 0), Vector2i(2, 2), Vector2i(1, 1), Vector2i(2, 2))
+			and not c._footprints_overlap(
+				Vector2i(0, 0), Vector2i(2, 2), Vector2i(2, 0), Vector2i(2, 2)
+			)
+		),
+		"integer-cell overlap rejects shared cells but allows edge-adjacent items"
+	)
+	check(
+		c._footprint_rect(Vector2i(0, 0), Vector2i(2, 2)).is_equal_approx(
+			Rect2(Vector2.ZERO, Vector2(0.5, 0.5))
+		),
+		"cell rectangles use quarter-meter boundaries from the floor origin"
+	)
+	var existing_desk: Node3D = c.editable[0]
+	var desk_bounds: AABB = c._object_bounds_in_floor(
+		existing_desk, existing_desk.get_meta("bounds")
+	)
+	var desk_origin: Vector2i = existing_desk.get_meta("footprint_origin_cells")
+	var desk_cells: Vector2i = existing_desk.get_meta("footprint_cells")
+	var desk_rect: Rect2 = c._footprint_rect(desk_origin, desk_cells)
+	check(
+		(
+			desk_bounds.position.x >= desk_rect.position.x
+			and desk_bounds.end.x <= desk_rect.end.x
+			and desk_bounds.position.z >= desk_rect.position.y
+			and desk_bounds.end.z <= desk_rect.end.y
+		),
+		"registered legacy desk cells contain its full visual bounds"
+	)
+
+
+func _test_cell_placement(c: Node, camera: Camera3D) -> void:
+	c.set_active(true)
+	c.select_asset("block")
+	var before: int = c.placed.get_child_count()
+	var checks: Array = [
+		[Vector3(2.24, 0, 2.76), true, "free cells inside the room are allowed"],
+		[Vector3(-3, 0, 1.75), true, "an overhead doorway header does not block shorter furniture"],
+		[Vector3(-4.75, 0, -3.55), false, "furniture footprint overlap is rejected"],
+		[Vector3(-5.5, 0, -1.2), false, "authored wall overlap is rejected"],
+		[Vector3(5.9, 0, 3.9), false, "cells extending past the floor boundary are rejected"],
+	]
+	for entry in checks:
+		var point: Vector2 = camera.unproject_position(entry[0])
+		c._update_preview(point)
+		check(c.valid_target == entry[1] and c.preview.visible, entry[2])
+		check(
+			(
+				c.front_marker.get_meta("footprint_origin_cells") == c.current_footprint_origin
+				and c.front_marker.get_meta("footprint_cells") == c.current_footprint_size
+				and c.front_marker.get_meta("allowed") == entry[1]
+			),
+			"preview marker matches the tested footprint and validity"
+		)
+		var footprint_rect: Rect2 = c._footprint_rect(
+			c.current_footprint_origin, c.current_footprint_size
+		)
+		var vertices: PackedVector3Array = c.front_marker.mesh.surface_get_arrays(0)[
+			Mesh.ARRAY_VERTEX
+		]
+		check(
+			(
+				vertices[0].x == footprint_rect.position.x
+				and vertices[0].z == footprint_rect.position.y
+				and vertices[1].x == footprint_rect.position.x
+				and vertices[1].z == footprint_rect.end.y
+			),
+			"marker border coordinates equal the collision/floor-test rectangle"
+		)
+		if not entry[1]:
+			click(c, point)
+			check(c.placed.get_child_count() == before, "invalid cell target cannot be confirmed")
+	key(c, KEY_ESCAPE)
+	check_idle(c, "cell placement checks leave no preview behind")
+	c.set_active(false)
+
+
 func _run() -> void:
 	root.size = Vector2i(1280, 720)
 	var scene: Node = load("res://scenes/main.tscn").instantiate()
@@ -68,6 +177,8 @@ func _run() -> void:
 	var camera: Camera3D = rig.get_node("Camera3D")
 	var original_desk: Node3D = scene.get_node("TestRoom/OfficeDesk")
 	_test_layout(c, scene)
+	_test_cell_helpers(c)
+	await _test_cell_placement(c, camera)
 	var camera_before: Transform3D = rig.global_transform
 	check(
 		c.floor_bounds.size.is_equal_approx(Vector3(12, 0.2, 8.5)),
@@ -100,13 +211,13 @@ func _run() -> void:
 		"block button starts preview only"
 	)
 	check(c.placed.get_child_count() == 0, "button does not create placed furniture")
-	var block_screen: Vector2 = camera.unproject_position(Vector3(2.24, 0, 2.26))
+	var block_screen: Vector2 = camera.unproject_position(Vector3(2.24, 0, 2.76))
 	c._update_preview(block_screen)
 	check(
 		(
 			c.valid_target
 			and c.preview.visible
-			and c.preview.global_position.is_equal_approx(Vector3(2, 0, 2.5))
+			and c.preview.global_position.is_equal_approx(Vector3(2.25, 0, 2.75))
 		),
 		"block snaps to floor"
 	)
@@ -141,9 +252,10 @@ func _run() -> void:
 	check(
 		(
 			c.front_marker.visible
-			and c.front_marker.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size() == 12
+			and c.current_footprint_size == Vector2i(4, 8)
+			and c.front_marker.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size() == 76
 		),
-		"desk front row has one marker arrow for each of its four 0.5m cells"
+		"rotated desk marker shows its 4×8 quarter-meter cells and front arrows"
 	)
 	click(c, desk_screen)
 	check(c.placed.get_child_count() == 3, "desk placed once")
@@ -176,12 +288,18 @@ func _run() -> void:
 	key(c, KEY_R)
 	var destination: Vector2 = camera.unproject_position(Vector3(1.26, 0, -1.26))
 	c._update_preview(destination)
+	var moved_transform: Transform3D = (
+		c.floor_mesh.global_transform
+		* c._preview_transform_for_footprint(
+			original_desk.get_meta("bounds"),
+			c.current_footprint_origin,
+			c.current_footprint_size,
+			c.quarter_turns
+		)
+	)
 	check(
-		(
-			original_desk.global_position.is_equal_approx(Vector3(1.5, 0, -1.5))
-			and is_equal_approx(original_desk.rotation.y, PI / 2)
-		),
-		"move snaps and rotates"
+		original_desk.global_transform.is_equal_approx(moved_transform),
+		"move snaps the complete rotated footprint to quarter-meter cells"
 	)
 	key(c, KEY_ESCAPE)
 	check_idle(c, "Escape after move returns idle, not new-object preview")
@@ -203,12 +321,8 @@ func _run() -> void:
 	click(c, destination)
 	check_idle(c, "move confirmation returns idle")
 	check(
-		(
-			original_desk.visible
-			and original_desk.global_position.is_equal_approx(Vector3(1.5, 0, -1.5))
-			and is_equal_approx(original_desk.rotation.y, PI / 2)
-		),
-		"confirmed desk remains at destination"
+		original_desk.visible and original_desk.global_transform.is_equal_approx(moved_transform),
+		"confirmed desk retains its cell-aligned destination transform"
 	)
 	check(
 		materials_snapshot(c, original_desk) == initial_materials,
@@ -378,11 +492,12 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 	c.select_asset("office_desk")
 	var ghost: Node3D = c.preview
 	var new_desks: Array[Node3D] = []
+	var desk_targets: Array[Vector3] = [Vector3(3, 0, -3), Vector3(3, 0, 0), Vector3(4.5, 0, 3)]
 	for index in range(3):
 		if index == 1:
 			key(c, KEY_R)
 		var turns: int = c.quarter_turns
-		var point: Vector2 = camera.unproject_position(Vector3(3, 0, -3 + index * 3))
+		var point: Vector2 = camera.unproject_position(desk_targets[index])
 		click(c, point, true)
 		check(c.placed.get_child_count() == count + index + 1, "Ctrl click adds independent desk")
 		var object: Node3D = c.placed.get_child(count + index)
@@ -421,21 +536,24 @@ func _test_task008(c: Node, desk: Node3D, camera: Camera3D) -> void:
 	var total: int = c.placed.get_child_count()
 	c.begin_move(move)
 	key(c, KEY_R)
-	c._update_preview(camera.unproject_position(Vector3(2, 0, -3)))
+	c._update_preview(camera.unproject_position(Vector3(-1.5, 0, -1.5)))
 	key(c, KEY_ESCAPE)
 	check(
 		move.global_transform.is_equal_approx(initial) and materials_snapshot(c, move) == materials,
 		"move cancellation after Ctrl placement restores transform/materials/shadows"
 	)
 	c.begin_move(move)
-	click(c, camera.unproject_position(Vector3(2, 0, -3)), true)
+	var move_target: Vector2 = camera.unproject_position(Vector3(-1.5, 0, -1.5))
+	c._update_preview(move_target)
+	var expected_move: Transform3D = move.global_transform
+	click(c, move_target, true)
 	check_idle(c, "Ctrl confirm in MOVING returns idle, never starts repeat placement")
 	check(
 		(
 			c.placed.get_child_count() == total
-			and move.global_position.is_equal_approx(Vector3(2, 0, -3))
+			and move.global_transform.is_equal_approx(expected_move)
 		),
-		"Ctrl MOVING confirms without cloning furniture"
+		"Ctrl MOVING confirms the cell-aligned transform without cloning furniture"
 	)
 	key(c, KEY_ESCAPE)
 
@@ -464,8 +582,8 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 	var preview: Node3D = c.preview
 	var bounds: AABB = preview.get_meta("bounds")
 	check(
-		bounds.size.distance_to(Vector3(1.4766, 1.4756, 1.3145)) < 0.0001,
-		"workstation preview uses imported full-kit bounds without scaling"
+		bounds.size.distance_to(Vector3(1.4980, 1.4756, 1.3482)) < 0.0001,
+		"workstation bounds include the rotated chair base and complete kit"
 	)
 	var meshes: Array[MeshInstance3D] = c._meshes(preview)
 	var surface_total: int = 0
@@ -479,9 +597,21 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 		c.ghost_records.size() == 6,
 		"ghost overrides are per preview mesh, not shared source resources"
 	)
-	var target: Vector2 = camera.unproject_position(Vector3(4.5, 0, -2.5))
+	var target: Vector2 = camera.unproject_position(Vector3(-2.0, 0, -3.0))
 	c._update_preview(target)
 	check(c.valid_target and preview.visible, "full-size workstation preview fits the floor grid")
+	var workstation_cells: Vector2i = c.current_footprint_size
+	var workstation_rect: Rect2 = c._footprint_rect(c.current_footprint_origin, workstation_cells)
+	var workstation_bounds: AABB = c._object_bounds_in_floor(preview, bounds)
+	check(
+		(
+			workstation_bounds.position.x >= workstation_rect.position.x
+			and workstation_bounds.end.x <= workstation_rect.end.x
+			and workstation_bounds.position.z >= workstation_rect.position.y
+			and workstation_bounds.end.z <= workstation_rect.end.y
+		),
+		"complete chair-and-desk bounds fit inside the functional cell envelope"
+	)
 	check(
 		(
 			is_instance_valid(c.front_marker)
@@ -492,35 +622,50 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 	)
 	var arrays: Array = c.front_marker.mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	check(vertices.size() == 9, "three marker arrows identify all three cells in the front row")
+	check(
+		c.current_footprint_size == Vector2i(7, 6) and vertices.size() == 72,
+		"workstation marker outlines all 42 occupied cells and seven front arrows"
+	)
 	var lowest_z: float = INF
 	var highest_z: float = -INF
 	for vertex in vertices:
 		lowest_z = minf(lowest_z, vertex.z)
 		highest_z = maxf(highest_z, vertex.z)
 	check(highest_z > lowest_z, "front arrows point along local +Z")
-	var marker_basis: Basis = c.front_marker.global_transform.basis
 	check(
-		c.front_marker.global_transform.is_equal_approx(preview.global_transform),
-		"marker follows preview transform"
+		(
+			vertices[0].x == workstation_rect.position.x
+			and vertices[0].z == workstation_rect.position.y
+			and vertices[1].x == workstation_rect.position.x
+			and vertices[1].z == workstation_rect.end.y
+		),
+		"workstation marker borders equal the full functional footprint rectangle"
+	)
+	check(
+		(
+			c.front_marker.global_transform.is_equal_approx(c.floor_mesh.global_transform)
+			and c.front_marker.get_meta("footprint_origin_cells") == c.current_footprint_origin
+		),
+		"marker occupies the same floor-aligned cells as the preview"
 	)
 	key(c, KEY_R)
 	c._update_preview(target)
 	check(
 		(
 			c.quarter_turns == 1
-			and c.front_marker.global_transform.basis.is_equal_approx(
-				preview.global_transform.basis
-			)
-			and not c.front_marker.global_transform.basis.is_equal_approx(marker_basis)
+			and c.current_footprint_size == Vector2i(6, 7)
+			and c.front_marker.get_meta("front_direction") == Vector2i(1, 0)
 		),
-		"front marker rotates with the model on R"
+		"front arrows and footprint direction rotate 90 degrees with the model"
 	)
-	var moved_target: Vector2 = camera.unproject_position(Vector3(3.5, 0, -1.5))
+	var moved_target: Vector2 = camera.unproject_position(Vector3(-1.5, 0, -3.0))
 	c._update_preview(moved_target)
 	check(
-		c.front_marker.global_position.is_equal_approx(preview.global_position),
-		"front marker follows mouse-driven preview movement"
+		(
+			c.front_marker.get_meta("footprint_origin_cells") == c.current_footprint_origin
+			and c.front_marker.global_transform.is_equal_approx(c.floor_mesh.global_transform)
+		),
+		"marker follows mouse movement by updating the exact occupied cell origin"
 	)
 	click(c, moved_target)
 	check(
@@ -556,8 +701,12 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 		"moving a placed workstation shows the front marker"
 	)
 	check(
-		c.front_marker.global_transform.is_equal_approx(placed.global_transform),
-		"move marker tracks the moving model"
+		(
+			c.front_marker.get_meta("footprint_origin_cells") == c.current_footprint_origin
+			and c.front_marker.get_meta("footprint_cells") == c.current_footprint_size
+			and c.front_marker.global_transform.is_equal_approx(c.floor_mesh.global_transform)
+		),
+		"move marker matches the moving model's occupied cell rectangle"
 	)
 	key(c, KEY_ESCAPE)
 	check(
@@ -582,7 +731,8 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 	c.select_asset("employee_workstation")
 	c._update_preview(target)
 	check(
-		c.front_marker.visible, "new workstation operation has a visible marker before cancellation"
+		c.front_marker.visible and not c.valid_target and not c.front_marker.get_meta("allowed"),
+		"overlapping workstation preview shows its invalid red footprint before cancellation"
 	)
 	key(c, KEY_ESCAPE)
 	check(
