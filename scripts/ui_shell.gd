@@ -44,6 +44,7 @@ var rail: PanelContainer
 var side: PanelContainer
 var bottom: PanelContainer
 var side_content: VBoxContainer
+var service_note: Control
 var nav_buttons: Dictionary = {}
 var clock_label: Label
 var date_label: Label
@@ -115,9 +116,10 @@ func _column(parent: Node, separation: int = 8) -> VBoxContainer:
 
 func _build() -> void:
 	root = Control.new()
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	# Resolve full-rect anchors only after the Control enters its viewport.
+	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	top = _panel(LIGHT)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 22)
@@ -181,12 +183,17 @@ func _build() -> void:
 	side_content = _column(scroll, 10)
 	side_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom = _panel(PAPER)
+	var footer_style := _style(PAPER)
+	footer_style.content_margin_top = 4
+	footer_style.content_margin_bottom = 4
+	bottom.add_theme_stylebox_override("panel", footer_style)
+	var footer := _column(bottom, 3)
 	var events := HBoxContainer.new()
-	events.add_theme_constant_override("separation", 18)
-	bottom.add_child(events)
+	events.add_theme_constant_override("separation", 14)
+	footer.add_child(events)
 	var heading := _column(events, 2)
 	heading.custom_minimum_size.x = 160
-	heading.add_child(_label("ЛЕНТА СОБЫТИЙ", 13, NAVY))
+	heading.add_child(_label("ПРЕСС-СЛУЖБА  /  ЛЕНТА", 13, NAVY))
 	heading.add_child(_label("ДЕМО  /  03 записи", 11, MUTED))
 	for event in [["ИНФОРМАЦИЯ", "Редакционный план обновлён", NAVY], ["ВНИМАНИЕ", "Релиз ожидает согласования", RED], ["СИСТЕМА", "Данные носят демонстрационный характер", MUTED]]:
 		var e := _column(events, 3)
@@ -195,6 +202,19 @@ func _build() -> void:
 		var text := _label(event[1], 14, INK)
 		text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		e.add_child(text)
+	var rule := ColorRect.new()
+	rule.color = LINE
+	rule.custom_minimum_size.y = 1
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	footer.add_child(rule)
+	var note_row := HBoxContainer.new()
+	note_row.add_theme_constant_override("separation", 8)
+	footer.add_child(note_row)
+	note_row.add_child(_label("ПРИМЕЧАНИЕ  /", 11, MUTED))
+	service_note = Note.new()
+	service_note.call("set_compact")
+	service_note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	note_row.add_child(service_note)
 
 func _layout() -> void:
 	var viewport_size := get_viewport().get_visible_rect().size
@@ -202,7 +222,7 @@ func _layout() -> void:
 	var header_height := 78.0 if not compact else 70.0
 	var rail_width := 188.0 if not compact else 156.0
 	var side_width := 320.0 if not compact else 300.0
-	var bottom_height := 104.0 if not compact else 94.0
+	var bottom_height := 84.0 if not compact else 80.0
 	top.position = Vector2.ZERO
 	top.size = Vector2(viewport_size.x, header_height)
 	rail.position = Vector2(12, header_height + 12)
@@ -223,12 +243,12 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 		var index: int = (int(note_indices.get(section, -1)) + 1) % NOTES[section].size()
 		note_indices[section] = index
 		current_note = NOTES[section][index]
+	service_note.call("set_note", current_note)
 	side.show()
 	for name in nav_buttons:
 		var b: Button = nav_buttons[name]
 		var active: bool = name == section
-		b.add_theme_stylebox_override("normal", _style(NAVY if active else LIGHT, NAVY if active else LINE))
-		b.add_theme_color_override("font_color", LIGHT if active else INK)
+		Style.button(b, active)
 	_clear_side()
 	var header := HBoxContainer.new()
 	side_content.add_child(header)
@@ -239,9 +259,10 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 	close.pressed.connect(side.hide)
 	close.mouse_force_pass_scroll_events = true
 	header.add_child(close)
-	side_content.add_child(_label("ОБЗОР  /  ДЕМО-ДАННЫЕ", 11, MUTED))
+	var kicker := {"Офис": "ОБЗОР ОФИСА", "Сотрудники": "ШТАТ ПРЕСС-СЛУЖБЫ", "Редакция": "РЕДАКЦИОННАЯ ПОВЕСТКА", "Задачи": "РЕДАКЦИОННЫЕ ПОРУЧЕНИЯ", "Документы": "РЕЕСТР ДОКУМЕНТОВ"}
+	side_content.add_child(_label(kicker[section] + "  /  ДЕМО", 11, MUTED))
 	for item in DATA[section]:
-		var card := _button("%s   %s\n        %s" % [item[0], item[1], item[2]])
+		var card := _button("%s   %s\n%s" % [item[0], item[1], item[2]])
 		card.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		card.custom_minimum_size.y = 68
 		card.mouse_force_pass_scroll_events = true
@@ -252,12 +273,6 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 	var foot := _label("Выберите карточку для подробностей", 12, MUTED)
 	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_content.add_child(foot)
-	_add_note()
-
-func _add_note() -> void:
-	var note := Note.new()
-	note.set_note(current_note)
-	side_content.add_child(note)
 
 func _show_detail(item: Array) -> void:
 	_clear_side()
@@ -265,7 +280,8 @@ func _show_detail(item: Array) -> void:
 	back.mouse_force_pass_scroll_events = true
 	back.pressed.connect(_show_section.bind(current_section, false))
 	side_content.add_child(back)
-	side_content.add_child(_label("КАРТОЧКА  /  ДЕМО", 11, MUTED))
+	var detail_kind := {"Документы": "ДОКУМЕНТ  /  РЕЕСТР", "Задачи": "РЕДАКЦИОННОЕ ЗАДАНИЕ", "Редакция": "РЕДАКЦИОННЫЙ МАТЕРИАЛ", "Сотрудники": "СОТРУДНИК  /  ШТАТ", "Офис": "ОФИС  /  ОБЪЕКТ"}
+	side_content.add_child(_label(detail_kind[current_section] + "  /  " + str(item[0]) + "  /  ДЕМО", 11, MUTED))
 	var title := _label(item[1], 21, NAVY)
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_content.add_child(title)
@@ -281,7 +297,6 @@ func _show_detail(item: Array) -> void:
 	close.pressed.connect(side.hide)
 	close.mouse_force_pass_scroll_events = true
 	side_content.add_child(close)
-	_add_note()
 
 func _toggle_pause() -> void:
 	paused = not paused
@@ -292,8 +307,7 @@ func _set_speed(value: int) -> void:
 	speed = value
 	for i in range(speed_buttons.size()):
 		var selected := i + 1 == speed
-		speed_buttons[i].add_theme_stylebox_override("normal", _style(NAVY if selected else LIGHT, NAVY if selected else LINE))
-		speed_buttons[i].add_theme_color_override("font_color", LIGHT if selected else INK)
+		Style.button(speed_buttons[i], selected)
 
 func _update_clock() -> void:
 	clock_label.text = "%02d:%02d" % [int(minutes) / 60, int(minutes) % 60]

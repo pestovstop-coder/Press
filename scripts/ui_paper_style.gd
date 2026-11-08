@@ -21,14 +21,18 @@ static func box(bg: Color, border: Color = LINE, width: int = 1) -> StyleBoxFlat
 
 static func button(b: Button, selected: bool = false) -> void:
 	b.add_theme_font_size_override("font_size", 15)
+	# Keep text alignment stable across all Button draw states.
+	b.add_theme_constant_override("align_to_largest_stylebox", 1)
 	b.add_theme_color_override("font_color", LIGHT if selected else INK)
 	b.add_theme_color_override("font_hover_color", LIGHT)
 	b.add_theme_color_override("font_pressed_color", LIGHT)
+	b.add_theme_color_override("font_hover_pressed_color", LIGHT)
 	b.add_theme_color_override("font_focus_color", LIGHT if selected else INK)
 	b.add_theme_color_override("font_disabled_color", MUTED)
 	b.add_theme_stylebox_override("normal", box(NAVY if selected else LIGHT, NAVY if selected else LINE))
 	b.add_theme_stylebox_override("hover", box(NAVY, NAVY))
 	b.add_theme_stylebox_override("pressed", box(RED, RED))
+	b.add_theme_stylebox_override("hover_pressed", box(RED, RED))
 	b.add_theme_stylebox_override("disabled", box(PAPER, LINE))
 	var focus := StyleBoxFlat.new()
 	focus.bg_color = Color(0, 0, 0, 0)

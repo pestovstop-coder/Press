@@ -43,7 +43,9 @@ check('minf(natural_height, maxf(120, viewport_size.y - 32))' in panel,
 for width, height in ((1920, 1080), (1600, 900), (1366, 768), (1280, 720), (1280, 500)):
     compact = width < 1400
     header = 70 if compact else 78
-    bottom = 94 if compact else 104
+    match = re.search(r"var bottom_height := ([0-9.]+) if not compact else ([0-9.]+)", ui)
+    assert match, "bottom height definition not found"
+    bottom = float(match.group(2) if compact else match.group(1))
     rail_y = header + 12
     rail_h = max(80, min(385, height - header - bottom - 36))
     side_h = max(180, height - header - bottom - 36)
