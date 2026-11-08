@@ -35,6 +35,10 @@ check("_bounds_inside_floor(visual_bounds)" in candidate,
       "floor edge validation uses visual bounds")
 check("COLLISION_EPSILON: float = 0.00001" in controller,
       "only 10-micron numeric tolerance is used; no physics margin is added")
+overlap_helper = "func _intervals_overlap_positive("
+check(overlap_helper in controller
+      and "minf(first_max, second_max) - maxf(first_min, second_min) > COLLISION_EPSILON" in controller,
+      "positive interval overlap excludes face-touching boundaries with the collision epsilon")
 check("_surface_snap_center(" in controller and "candidate_center" in controller,
       "nearby wall/furniture surfaces can align to exact visual bounds")
 check("_surface_contact_axes(candidate_mesh_bounds)" in controller

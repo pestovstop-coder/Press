@@ -457,6 +457,12 @@ func _intervals_near(
 	return first_min <= second_max + margin and second_min <= first_max + margin
 
 
+func _intervals_overlap_positive(
+	first_min: float, first_max: float, second_min: float, second_max: float
+) -> bool:
+	return minf(first_max, second_max) - maxf(first_min, second_min) > COLLISION_EPSILON
+
+
 func _aabb_contact_axes(first: AABB, second: AABB) -> int:
 	var touches_x: bool = (
 		(
