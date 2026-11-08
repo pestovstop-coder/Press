@@ -12,7 +12,10 @@ func _run() -> void:
 	assert(ui.root.mouse_filter == Control.MOUSE_FILTER_IGNORE)
 	for panel in [ui.top, ui.rail, ui.side, ui.bottom]:
 		assert(panel.mouse_filter == Control.MOUSE_FILTER_STOP)
-		assert(not panel.force_pass_scroll_events)
+		assert(not panel.mouse_force_pass_scroll_events)
+	for button in ui.nav_buttons.values() + ui.speed_buttons + [ui.pause_button]:
+		assert(button.mouse_filter == Control.MOUSE_FILTER_STOP)
+		assert(not button.mouse_force_pass_scroll_events)
 	ui._show_section("Документы")
 	assert(ui.current_section == "Документы" and ui.side.visible)
 	ui._show_detail(["РЛ", "Пресс-релиз № 18", "НА СОГЛАСОВАНИИ", "Демо"])

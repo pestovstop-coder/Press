@@ -81,7 +81,7 @@ func _style(bg: Color, border: Color = LINE, width: int = 1) -> StyleBoxFlat:
 func _panel(bg: Color) -> PanelContainer:
 	var p := PanelContainer.new()
 	p.mouse_filter = Control.MOUSE_FILTER_STOP
-	p.force_pass_scroll_events = false
+	p.mouse_force_pass_scroll_events = false
 	p.add_theme_stylebox_override("panel", _style(bg))
 	root.add_child(p)
 	return p
@@ -99,7 +99,7 @@ func _button(text: String, active: bool = false) -> Button:
 	b.text = text
 	b.focus_mode = Control.FOCUS_ALL
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
-	b.force_pass_scroll_events = false
+	b.mouse_force_pass_scroll_events = false
 	b.add_theme_font_size_override("font_size", 15)
 	b.add_theme_color_override("font_color", LIGHT if active else INK)
 	b.add_theme_color_override("font_hover_color", LIGHT)
