@@ -41,13 +41,29 @@ func _run() -> void:
 	var card: Button = ui.side_content.get_child(2)
 	assert(card.mouse_force_pass_scroll_events and card.mouse_filter == Control.MOUSE_FILTER_STOP)
 	assert(ui.current_section == "Документы" and ui.side.visible)
+	assert(ui.nav_buttons["Документы"].text.begins_with("▸"))
+	assert(ui.context_note.text_label.text == ui.current_note)
+	assert(ui.service_note.text_label.text != ui.current_note)
 	await process_frame
 	await process_frame
 	_click_button(card, card.size / 2.0)
 	assert(ui.side_content.get_child(0) is Button) # detail back button
 	ui._show_detail(["РЛ", "Пресс-релиз № 18", "НА СОГЛАСОВАНИИ", "Демо"])
 	assert(ui.side_content.get_child_count() > 3)
-	ui.side.hide()
+	var detail_close: Button = ui.side_content.get_child(ui.side_content.get_child_count() - 1)
+	detail_close.pressed.emit()
+	assert(not ui.side.visible)
+	for button in ui.nav_buttons.values():
+		assert(not button.text.begins_with("▸"))
+	assert(ui.service_note.is_visible_in_tree())
+	ui._show_section("Задачи")
+	assert(ui.nav_buttons["Задачи"].text.begins_with("▸"))
+	ui.side.hide() # External visibility changes use the same synchronization.
+	assert(not ui.nav_buttons["Задачи"].text.begins_with("▸"))
+	ui._show_section("Задачи")
+	var header_close: Button = ui.side_content.get_child(0).get_child(1)
+	header_close.pressed.emit()
+	assert(not ui.side.visible and not ui.nav_buttons["Задачи"].text.begins_with("▸"))
 	ui._show_section("Задачи")
 	assert(ui.side.visible and ui.current_section == "Задачи")
 	ui._set_speed(3)

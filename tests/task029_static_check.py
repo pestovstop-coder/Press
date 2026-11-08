@@ -9,7 +9,8 @@ assert ui.index('add_child(root)') < ui.index('root.set_anchors_and_offsets_pres
 assert 'var bottom_height := 84.0 if not compact else 80.0' in ui
 assert 'footer_style.content_margin_top = 4' in ui
 assert 'footer.add_child(note_row)' in ui and 'note_row.add_child(service_note)' in ui
-assert 'service_note.call("set_note", current_note)' in ui
+assert 'context_note.call("set_note", current_note)' in ui
+assert 'service_note.call("set_note", GENERAL_NOTE)' in ui
 assert 'func _add_note()' not in ui
 assert 'text_label.clip_text = true' in note and 'func set_compact()' in note
 assert 'align_to_largest_stylebox", 1' in style

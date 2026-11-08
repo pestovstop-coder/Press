@@ -3,8 +3,10 @@ extends CanvasLayer
 
 const Style = preload("res://scripts/ui_paper_style.gd")
 const Note = preload("res://scripts/ui_service_note.gd")
+const PaperCard = preload("res://scripts/ui_paper_card.gd")
+const GENERAL_NOTE := "Рабочий день начался. Причины пока неизвестны."
 const NOTES := {
-	"Офис": ["Рабочий день начался. Причины пока неизвестны.", "Ситуация стабильна. Определение стабильности уточняется."],
+	"Офис": ["План работы утверждён. Детали уточняются.", "Ситуация стабильна. Определение стабильности уточняется."],
 	"Сотрудники": ["Штатное расписание утверждено. Штат пока не в курсе.", "Ответственный назначен. Ответственность уточняется."],
 	"Редакция": ["Редакция просит комментарий. Руководство просит не комментировать.", "Заголовок утверждён. Содержание на рассмотрении."],
 	"Задачи": ["Пять слов согласовывали три рабочих дня.", "Срок уточнён. Срочность остаётся прежней."],
@@ -45,6 +47,7 @@ var side: PanelContainer
 var bottom: PanelContainer
 var side_content: VBoxContainer
 var service_note: Control
+var context_note: Control
 var nav_buttons: Dictionary = {}
 var clock_label: Label
 var date_label: Label
@@ -98,8 +101,8 @@ func _label(text: String, size: int = 16, color: Color = INK) -> Label:
 	l.add_theme_color_override("font_color", color)
 	return l
 
-func _button(text: String, active: bool = false) -> Button:
-	var b := Button.new()
+func _button(text: String, active: bool = false, paper: bool = false) -> Button:
+	var b: Button = PaperCard.new() if paper else Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_ALL
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -175,13 +178,22 @@ func _build() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	menu.add_child(hint)
 	side = _panel(LIGHT)
+	side.visibility_changed.connect(_sync_nav)
+	var side_layout := _column(side, 6)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	Style.scrollbar(scroll)
-	side.add_child(scroll)
+	side_layout.add_child(scroll)
 	side_content = _column(scroll, 10)
 	side_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var side_rule := ColorRect.new()
+	side_rule.color = LINE
+	side_rule.custom_minimum_size.y = 1
+	side_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	side_layout.add_child(side_rule)
+	context_note = Note.new()
+	side_layout.add_child(context_note)
 	bottom = _panel(PAPER)
 	var footer_style := _style(PAPER)
 	footer_style.content_margin_top = 4
@@ -213,6 +225,7 @@ func _build() -> void:
 	note_row.add_child(_label("ПРИМЕЧАНИЕ  /", 11, MUTED))
 	service_note = Note.new()
 	service_note.call("set_compact")
+	service_note.call("set_note", GENERAL_NOTE)
 	service_note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	note_row.add_child(service_note)
 
@@ -243,12 +256,9 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 		var index: int = (int(note_indices.get(section, -1)) + 1) % NOTES[section].size()
 		note_indices[section] = index
 		current_note = NOTES[section][index]
-	service_note.call("set_note", current_note)
+	context_note.call("set_note", current_note)
 	side.show()
-	for name in nav_buttons:
-		var b: Button = nav_buttons[name]
-		var active: bool = name == section
-		Style.button(b, active)
+	_sync_nav()
 	_clear_side()
 	var header := HBoxContainer.new()
 	side_content.add_child(header)
@@ -256,13 +266,13 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 	var close := _button("×")
-	close.pressed.connect(side.hide)
+	close.pressed.connect(_close_side)
 	close.mouse_force_pass_scroll_events = true
 	header.add_child(close)
 	var kicker := {"Офис": "ОБЗОР ОФИСА", "Сотрудники": "ШТАТ ПРЕСС-СЛУЖБЫ", "Редакция": "РЕДАКЦИОННАЯ ПОВЕСТКА", "Задачи": "РЕДАКЦИОННЫЕ ПОРУЧЕНИЯ", "Документы": "РЕЕСТР ДОКУМЕНТОВ"}
 	side_content.add_child(_label(kicker[section] + "  /  ДЕМО", 11, MUTED))
 	for item in DATA[section]:
-		var card := _button("%s   %s\n%s" % [item[0], item[1], item[2]])
+		var card := _button("%s   %s\n%s" % [item[0], item[1], item[2]], false, true)
 		card.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		card.custom_minimum_size.y = 68
 		card.mouse_force_pass_scroll_events = true
@@ -273,6 +283,22 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 	var foot := _label("Выберите карточку для подробностей", 12, MUTED)
 	foot.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_content.add_child(foot)
+
+func _close_side() -> void:
+	side.hide()
+
+func _sync_nav() -> void:
+	if side == null:
+		return
+	for name in nav_buttons:
+		var b: Button = nav_buttons[name]
+		var selected: bool = side.visible and name == current_section
+		Style.button(b, selected)
+		# A persistent text marker distinguishes selection from hover and focus.
+		b.text = ("▸  " if selected else "") + str(name)
+		if not selected:
+			b.add_theme_stylebox_override("hover", _style(Color("ded8cc"), LINE))
+			b.add_theme_color_override("font_hover_color", INK)
 
 func _show_detail(item: Array) -> void:
 	_clear_side()
@@ -294,7 +320,7 @@ func _show_detail(item: Array) -> void:
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_content.add_child(note)
 	var close := _button("Закрыть панель")
-	close.pressed.connect(side.hide)
+	close.pressed.connect(_close_side)
 	close.mouse_force_pass_scroll_events = true
 	side_content.add_child(close)
 
