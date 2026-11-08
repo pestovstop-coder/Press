@@ -988,18 +988,24 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 func _test_room_labels(scene: Node, rig: Node3D, _camera: Camera3D, c: Node) -> void:
 	var labels: Node3D = scene.get_node("RoomLabels")
 	check(labels.labels.size() == 3, "first scene has three static floor text labels")
+	var registry: Node = scene.get_node("RoomRegistry")
 	var expected: Array = [
-		["office_101", "КАБИНЕТ 101", Vector3(-3, 0.004, -1.95)],
-		["office_102", "КАБИНЕТ 102", Vector3(3, 0.004, -1.95)],
-		["corridor_main", "ОБЩИЙ КОРИДОР", Vector3(0, 0.004, 3.15)],
+		["room_101", Vector3(-3, 0.004, -1.95)],
+		["room_102", Vector3(3, 0.004, -1.95)],
+		["corridor_main", Vector3(0, 0.004, 3.15)],
 	]
 	for entry in expected:
-		var label: Label3D = labels.get_node("FloorLabel_" + entry[0]) as Label3D
+		var room_id: String = entry[0]
+		var room: Dictionary = registry.call("get_room_by_id", room_id)
+		var label: Label3D = labels.get_node("FloorLabel_" + room_id) as Label3D
 		check(
-			label.get_meta("zone_id") == entry[0] and label.position.is_equal_approx(entry[2]),
-			"flat text is anchored in the planned aisle for " + entry[0]
+			label.get_meta("room_id") == room_id and label.position.is_equal_approx(entry[1]),
+			"flat text is anchored in the planned aisle for " + room_id
 		)
-		check(label.text == entry[1], "editable floor text matches " + entry[0])
+		check(
+			label.text == room["display_name"],
+			"floor text is sourced from the registered room " + room_id
+		)
 		check(
 			(
 				label.billboard == BaseMaterial3D.BILLBOARD_DISABLED

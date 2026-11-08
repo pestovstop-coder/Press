@@ -5,21 +5,34 @@ const FLOOR_OFFSET: float = 0.004
 const TEXT_COLOR := Color(0.22, 0.28, 0.30, 0.46)
 const FONT_SIZE: int = 22
 const PIXEL_SIZE: float = 0.009
+const LABEL_POSITIONS: Array[Vector3] = [
+	Vector3(-3.0, FLOOR_OFFSET, -1.95),
+	Vector3(3.0, FLOOR_OFFSET, -1.95),
+	Vector3(0.0, FLOOR_OFFSET, 3.15),
+]
 
 var labels: Array[Label3D] = []
+@onready var room_registry: Node = get_node("../RoomRegistry")
 
 
 func _ready() -> void:
-	_add_floor_label("office_101", "КАБИНЕТ 101", Vector3(-3.0, FLOOR_OFFSET, -1.95))
-	_add_floor_label("office_102", "КАБИНЕТ 102", Vector3(3.0, FLOOR_OFFSET, -1.95))
-	_add_floor_label("corridor_main", "ОБЩИЙ КОРИДОР", Vector3(0.0, FLOOR_OFFSET, 3.15))
+	var room_ids: PackedStringArray = room_registry.call("get_room_ids")
+	assert(
+		room_ids.size() == LABEL_POSITIONS.size(),
+		"Each registered room needs a floor-label position"
+	)
+	for index in range(room_ids.size()):
+		_add_floor_label(room_ids[index], LABEL_POSITIONS[index])
 
 
-func _add_floor_label(zone_id: String, value: String, world_position: Vector3) -> void:
+func _add_floor_label(room_id: String, world_position: Vector3) -> void:
+	var room: Dictionary = room_registry.call("get_room_by_id", room_id)
+	assert(not room.is_empty(), "Floor label references an unknown room ID: " + room_id)
+
 	var label := Label3D.new()
-	label.name = "FloorLabel_" + zone_id
-	label.set_meta("zone_id", zone_id)
-	label.text = value
+	label.name = "FloorLabel_" + room_id
+	label.set_meta("room_id", room_id)
+	label.text = room["display_name"]
 	label.font_size = FONT_SIZE
 	label.pixel_size = PIXEL_SIZE
 	label.modulate = TEXT_COLOR
