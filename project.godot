@@ -28,5 +28,5 @@ renderer/rendering_method.web="gl_compatibility"
 ; TASK 012: balanced desktop directional shadows; cheaper mobile overrides.
 rendering/lights_and_shadows/directional_shadow/size=4096
 rendering/lights_and_shadows/directional_shadow/size.mobile=2048
-rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality=4
 rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=2

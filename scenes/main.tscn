@@ -66,7 +66,7 @@ background_mode = 1
 background_color = Color(0.13, 0.14, 0.15, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.96, 0.95, 0.93, 1)
-ambient_light_energy = 0.28
+ambient_light_energy = 0.36
 ambient_light_sky_contribution = 0.0
 
 [node name="Main" type="Node3D"]
