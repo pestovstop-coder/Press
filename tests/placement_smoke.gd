@@ -124,18 +124,43 @@ func _test_cell_helpers(c: Node) -> void:
 func _test_cell_placement(c: Node, camera: Camera3D) -> void:
 	c.set_active(true)
 	c.select_asset("block")
+	check(
+		(
+			c.valid_target
+			and c.placement_diagnostic == "VALID"
+			and c.front_marker.visible
+			and c.front_marker.get_meta("allowed")
+		),
+		"block selection starts with a free valid footprint and matching green marker"
+	)
 	var before: int = c.placed.get_child_count()
 	var checks: Array = [
-		[Vector3(2.24, 0, 2.76), true, "free cells inside the room are allowed"],
-		[Vector3(-3, 0, 1.75), true, "an overhead doorway header does not block shorter furniture"],
-		[Vector3(-4.75, 0, -3.55), false, "furniture footprint overlap is rejected"],
-		[Vector3(-5.5, 0, -1.2), false, "authored wall overlap is rejected"],
-		[Vector3(5.9, 0, 3.9), false, "cells extending past the floor boundary are rejected"],
+		[Vector3(2.24, 0, 2.76), true, "VALID", "free cells inside the room are allowed"],
+		[
+			Vector3(-3, 0, 1.75),
+			true,
+			"VALID",
+			"an overhead doorway header does not block shorter furniture",
+		],
+		[
+			Vector3(-4.75, 0, -3.55),
+			false,
+			"FURNITURE_COLLISION",
+			"furniture footprint overlap is rejected",
+		],
+		[Vector3(-5.5, 0, -1.2), false, "WALL_COLLISION", "authored wall overlap is rejected"],
+		[
+			Vector3(5.9, 0, 3.9),
+			false,
+			"OUT_OF_BOUNDS",
+			"cells extending past the floor boundary are rejected",
+		],
 	]
 	for entry in checks:
 		var point: Vector2 = camera.unproject_position(entry[0])
 		c._update_preview(point)
-		check(c.valid_target == entry[1] and c.preview.visible, entry[2])
+		check(c.valid_target == entry[1] and c.preview.visible, entry[3])
+		check(c.placement_diagnostic == entry[2], "placement reports " + entry[2])
 		check(
 			(
 				c.front_marker.get_meta("footprint_origin_cells") == c.current_footprint_origin
@@ -240,6 +265,15 @@ func _run() -> void:
 	check(
 		c.state == Placement.EditorState.PLACING and c.selected_asset == "office_desk",
 		"desk button starts new-object operation"
+	)
+	check(
+		(
+			c.valid_target
+			and c.placement_diagnostic == "VALID"
+			and c.front_marker.visible
+			and c.front_marker.get_meta("allowed")
+		),
+		"desk selection starts with a free footprint and matching green marker"
 	)
 	var bounds: AABB = c.preview.get_meta("bounds")
 	check(
@@ -576,8 +610,14 @@ func _test_employee_workstation(c: Node, camera: Camera3D) -> void:
 		"workstation catalogue button starts placement preview"
 	)
 	check(
-		c.status.text == "Рабочее место сотрудника",
-		"workstation preview displays its localized name"
+		(
+			c.status.text.begins_with("Рабочее место сотрудника")
+			and c.placement_diagnostic == "VALID"
+			and c.valid_target
+			and c.front_marker.visible
+			and c.front_marker.get_meta("allowed")
+		),
+		"workstation selection starts with a valid preview and matching green marker"
 	)
 	var preview: Node3D = c.preview
 	var bounds: AABB = preview.get_meta("bounds")

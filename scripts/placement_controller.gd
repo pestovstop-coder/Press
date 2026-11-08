@@ -22,6 +22,7 @@ const EMPLOYEE_WORKSTATION: PackedScene = preload(
 var active: bool = false
 var quarter_turns: int = 0
 var valid_target: bool = false
+var placement_diagnostic: String = "IDLE"
 var state: EditorState = EditorState.IDLE
 var selected_asset: String = ""
 var grid: MeshInstance3D
@@ -65,7 +66,10 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if active and state != EditorState.IDLE:
-		_update_preview(get_viewport().get_mouse_position())
+		var mouse_position: Vector2 = get_viewport().get_mouse_position()
+		# Keep the last world-space target while the pointer is over the catalogue.
+		if not _over_panel(mouse_position):
+			_update_preview(mouse_position)
 
 
 func _input(event: InputEvent) -> void:
@@ -131,7 +135,9 @@ func select_asset(asset_id: String) -> void:
 	selected_asset = asset_id
 	state = EditorState.PLACING
 	_new_preview()
-	_update_preview(get_viewport().get_mouse_position())
+	# Start on a real free floor footprint; the next world-space mouse update
+	# takes over, while hovering the catalogue preserves this valid preview.
+	_initialize_first_valid_preview()
 
 
 func _instantiate_asset(asset_id: String) -> Node3D:
@@ -211,7 +217,7 @@ func begin_move(object: Node3D) -> void:
 	current_footprint_origin = object.get_meta("footprint_origin_cells")
 	current_footprint_size = _footprint_cells_for_asset(selected_asset, quarter_turns)
 	_create_footprint_marker()
-	status.text = "Перемещение · Esc — вернуть"
+	_set_placement_diagnostic("INVALID_COORDINATES")
 
 
 func cancel_operation() -> void:
@@ -235,6 +241,7 @@ func _reset_selection() -> void:
 	current_footprint_size = Vector2i.ZERO
 	last_marker_state.clear()
 	valid_target = false
+	placement_diagnostic = "IDLE"
 	status.text = "Ничего не выбрано"
 
 
@@ -336,37 +343,134 @@ func _footprint_inside_floor(origin: Vector2i, cells: Vector2i) -> bool:
 	)
 
 
-func _candidate_is_valid(origin: Vector2i, cells: Vector2i, visual_bounds: AABB) -> bool:
-	if not _footprint_inside_floor(origin, cells):
-		return false
-	if (
+func _candidate_invalid_reason(origin: Vector2i, cells: Vector2i, visual_bounds: AABB) -> String:
+	var reason: String = ""
+	if cells.x <= 0 or cells.y <= 0:
+		reason = "INVALID_FOOTPRINT"
+	elif not visual_bounds.position.is_finite() or not visual_bounds.size.is_finite():
+		reason = "INVALID_COORDINATES"
+	elif not _footprint_inside_floor(origin, cells):
+		reason = "OUT_OF_BOUNDS"
+	elif (
 		visual_bounds.position.x < floor_bounds.position.x
 		or visual_bounds.end.x > floor_bounds.end.x
 		or visual_bounds.position.z < floor_bounds.position.z
 		or visual_bounds.end.z > floor_bounds.end.z
 	):
-		return false
-	for object in editable:
-		if object == editing:
-			continue
-		var other_origin: Vector2i = object.get_meta("footprint_origin_cells")
-		var other_cells: Vector2i = object.get_meta("footprint_cells")
-		if _footprints_overlap(origin, cells, other_origin, other_cells):
-			return false
-	var footprint: Rect2 = _footprint_rect(origin, cells)
-	for mesh in room_occluders:
-		if mesh == floor_mesh:
-			continue
-		var obstacle: AABB = _obstacle_bounds_in_floor(mesh)
-		if visual_bounds.position.y >= obstacle.end.y or visual_bounds.end.y <= obstacle.position.y:
-			continue
-		var obstacle_rect := Rect2(
-			Vector2(obstacle.position.x, obstacle.position.z),
-			Vector2(obstacle.size.x, obstacle.size.z)
-		)
-		if footprint.intersects(obstacle_rect):
-			return false
-	return true
+		reason = "OUT_OF_BOUNDS"
+	if reason.is_empty():
+		for object in editable:
+			if object == editing:
+				continue
+			if (
+				not object.has_meta("footprint_origin_cells")
+				or not object.has_meta("footprint_cells")
+			):
+				reason = "INVALID_FOOTPRINT"
+				break
+			var other_origin: Vector2i = object.get_meta("footprint_origin_cells")
+			var other_cells: Vector2i = object.get_meta("footprint_cells")
+			if other_cells.x <= 0 or other_cells.y <= 0:
+				reason = "INVALID_FOOTPRINT"
+				break
+			if _footprints_overlap(origin, cells, other_origin, other_cells):
+				reason = "FURNITURE_COLLISION"
+				break
+	if reason.is_empty():
+		var footprint: Rect2 = _footprint_rect(origin, cells)
+		for mesh in room_occluders:
+			if mesh == floor_mesh:
+				continue
+			var obstacle: AABB = _obstacle_bounds_in_floor(mesh)
+			if (
+				visual_bounds.position.y >= obstacle.end.y
+				or visual_bounds.end.y <= obstacle.position.y
+			):
+				continue
+			var obstacle_rect := Rect2(
+				Vector2(obstacle.position.x, obstacle.position.z),
+				Vector2(obstacle.size.x, obstacle.size.z)
+			)
+			if footprint.intersects(obstacle_rect):
+				reason = "WALL_COLLISION" if mesh.has_meta("cutaway_side") else "OBSTACLE_COLLISION"
+				break
+	return "VALID" if reason.is_empty() else reason
+
+
+func _set_placement_diagnostic(reason: String) -> void:
+	placement_diagnostic = reason
+	if status == null:
+		return
+	if state == EditorState.MOVING:
+		status.text = "Перемещение · " + reason + " · Esc — вернуть"
+	elif state == EditorState.PLACING:
+		var asset_name: String = selected_asset
+		match selected_asset:
+			"block":
+				asset_name = "Блок"
+			"office_desk":
+				asset_name = "Офисный стол"
+			"employee_workstation":
+				asset_name = "Рабочее место сотрудника"
+		status.text = asset_name + " · " + reason
+
+
+func _find_nearest_valid_origin(cells: Vector2i, bounds: AABB, turns: int) -> Variant:
+	if cells.x <= 0 or cells.y <= 0:
+		return null
+	var min_x: int = ceili(floor_bounds.position.x / CELL_SIZE)
+	var min_z: int = ceili(floor_bounds.position.z / CELL_SIZE)
+	var max_x: int = floori(floor_bounds.end.x / CELL_SIZE) - cells.x
+	var max_z: int = floori(floor_bounds.end.z / CELL_SIZE) - cells.y
+	var found: bool = false
+	var best_origin: Vector2i = Vector2i.ZERO
+	var best_distance: float = INF
+	for x in range(min_x, max_x + 1):
+		for z in range(min_z, max_z + 1):
+			var origin := Vector2i(x, z)
+			var local_transform: Transform3D = _preview_transform_for_footprint(
+				bounds, origin, cells, turns
+			)
+			var visual_bounds: AABB = local_transform * bounds
+			if _candidate_invalid_reason(origin, cells, visual_bounds) != "VALID":
+				continue
+			var distance: float = _footprint_center(origin, cells).length_squared()
+			if distance < best_distance:
+				found = true
+				best_origin = origin
+				best_distance = distance
+	return best_origin if found else null
+
+
+func _apply_preview_at_origin(origin: Vector2i, cells: Vector2i) -> void:
+	current_footprint_origin = origin
+	current_footprint_size = cells
+	var bounds: AABB = preview.get_meta("bounds")
+	var local_transform: Transform3D = _preview_transform_for_footprint(
+		bounds, current_footprint_origin, current_footprint_size, quarter_turns
+	)
+	preview.global_transform = floor_mesh.global_transform * local_transform
+	preview.visible = true
+	var visual_bounds: AABB = local_transform * bounds
+	placement_diagnostic = _candidate_invalid_reason(
+		current_footprint_origin, current_footprint_size, visual_bounds
+	)
+	valid_target = placement_diagnostic == "VALID"
+	_set_placement_diagnostic(placement_diagnostic)
+	if is_instance_valid(front_marker):
+		_update_footprint_marker(current_footprint_origin, current_footprint_size, valid_target)
+
+
+func _initialize_first_valid_preview() -> void:
+	var cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
+	var bounds: AABB = preview.get_meta("bounds")
+	var origin: Variant = _find_nearest_valid_origin(cells, bounds, quarter_turns)
+	if typeof(origin) != TYPE_VECTOR2I:
+		valid_target = false
+		preview.visible = false
+		_set_placement_diagnostic("NO_VALID_PLACEMENT")
+		return
+	_apply_preview_at_origin(origin, cells)
 
 
 func snapped_floor_point(local_hit: Vector3) -> Vector3:
@@ -400,47 +504,45 @@ func _preview_transform_for_footprint(
 
 
 func _update_preview(screen_point: Vector2) -> void:
-	valid_target = false
-	if is_instance_valid(front_marker):
-		front_marker.visible = false
 	if preview == null:
 		return
-	preview.visible = false
-	if not active or _over_panel(screen_point):
+	if not active:
+		valid_target = false
+		preview.visible = false
+		_set_placement_diagnostic("INVALID_COORDINATES")
 		return
+	# The catalogue click is not a world-space placement request. Preserve the
+	# last candidate until the pointer returns to the room instead of rejecting it.
+	if _over_panel(screen_point):
+		if current_footprint_size.x > 0 and current_footprint_size.y > 0:
+			var anchor: Vector2 = _footprint_center(
+				current_footprint_origin, current_footprint_size
+			)
+			var rotated_cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
+			_apply_preview_at_origin(
+				_footprint_origin_for_center(anchor, rotated_cells), rotated_cells
+			)
+		return
+	valid_target = false
+	preview.visible = false
+	if is_instance_valid(front_marker):
+		front_marker.visible = false
+	_set_placement_diagnostic("INVALID_COORDINATES")
 	var ray_origin: Vector3 = floor_mesh.to_local(camera.project_ray_origin(screen_point))
 	var direction: Vector3 = (
 		floor_mesh.global_basis.inverse() * camera.project_ray_normal(screen_point)
 	)
-	if absf(direction.y) < 0.00001:
+	if not ray_origin.is_finite() or not direction.is_finite() or absf(direction.y) < 0.00001:
 		return
 	var distance: float = (floor_top - ray_origin.y) / direction.y
 	if distance < 0.0:
 		return
 	var hit: Vector3 = ray_origin + direction * distance
-	if (
-		hit.x < floor_bounds.position.x
-		or hit.x > floor_bounds.end.x
-		or hit.z < floor_bounds.position.z
-		or hit.z > floor_bounds.end.z
-	):
+	if not hit.is_finite():
 		return
-	current_footprint_size = _footprint_cells_for_asset(selected_asset, quarter_turns)
-	current_footprint_origin = _footprint_origin_for_center(
-		Vector2(hit.x, hit.z), current_footprint_size
-	)
-	var bounds: AABB = preview.get_meta("bounds")
-	var local_transform: Transform3D = _preview_transform_for_footprint(
-		bounds, current_footprint_origin, current_footprint_size, quarter_turns
-	)
-	preview.global_transform = floor_mesh.global_transform * local_transform
-	preview.visible = true
-	var visual_bounds: AABB = local_transform * bounds
-	valid_target = _candidate_is_valid(
-		current_footprint_origin, current_footprint_size, visual_bounds
-	)
-	if is_instance_valid(front_marker):
-		_update_footprint_marker(current_footprint_origin, current_footprint_size, valid_target)
+	var cells: Vector2i = _footprint_cells_for_asset(selected_asset, quarter_turns)
+	var origin: Vector2i = _footprint_origin_for_center(Vector2(hit.x, hit.z), cells)
+	_apply_preview_at_origin(origin, cells)
 
 
 func place_block(keep_placing: bool = false) -> void:
