@@ -1099,7 +1099,7 @@ func _build_panel() -> void:
 	column.add_child(title)
 	var buttons: Dictionary = {}
 	for asset_id in ["block", "office_desk", "employee_workstation"]:
-		var button := Button.new()
+		var button := preload("res://scripts/ui_paper_card.gd").new()
 		match asset_id:
 			"block":
 				button.text = "Блок 1×1×1 м\nТестовый объект"
@@ -1116,7 +1116,7 @@ func _build_panel() -> void:
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.clip_text = true
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		style.button(button)
+		style.button(button, false, "catalogue")
 		button.pressed.connect(select_asset.bind(asset_id))
 		column.add_child(button)
 		buttons[asset_id] = button

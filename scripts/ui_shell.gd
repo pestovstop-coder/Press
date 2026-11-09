@@ -101,14 +101,14 @@ func _label(text: String, size: int = 16, color: Color = INK) -> Label:
 	l.add_theme_color_override("font_color", color)
 	return l
 
-func _button(text: String, active: bool = false, paper: bool = false) -> Button:
+func _button(text: String, active: bool = false, paper: bool = false, role: String = "card") -> Button:
 	var b: Button = PaperCard.new() if paper else Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_ALL
 	b.mouse_filter = Control.MOUSE_FILTER_STOP
 	b.mouse_force_pass_scroll_events = false
 	b.custom_minimum_size = Vector2(44, 44)
-	Style.button(b, active)
+	Style.button(b, active, role)
 	return b
 
 func _column(parent: Node, separation: int = 8) -> VBoxContainer:
@@ -140,12 +140,12 @@ func _build() -> void:
 	var controls := HBoxContainer.new()
 	controls.add_theme_constant_override("separation", 4)
 	h.add_child(controls)
-	pause_button = _button("Ⅱ")
+	pause_button = _button("Ⅱ", false, false, "compact")
 	pause_button.tooltip_text = "Пауза"
 	pause_button.pressed.connect(_toggle_pause)
 	controls.add_child(pause_button)
 	for n in [1, 2, 3]:
-		var b := _button("%d×" % n, n == speed)
+		var b := _button("%d×" % n, n == speed, false, "tab")
 		b.pressed.connect(_set_speed.bind(n))
 		controls.add_child(b)
 		speed_buttons.append(b)
@@ -165,7 +165,7 @@ func _build() -> void:
 	menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	menu.add_child(_label("НАВИГАЦИЯ  /  01", 11, MUTED))
 	for section in DATA.keys():
-		var b := _button(section)
+		var b := _button(section, false, false, "navigation")
 		b.mouse_force_pass_scroll_events = true
 		b.clip_text = true
 		b.custom_minimum_size.y = 46
@@ -265,7 +265,7 @@ func _show_section(section: String, advance_note: bool = true) -> void:
 	var title := _label(section.to_upper(), 20, NAVY)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
-	var close := _button("×")
+	var close := _button("×", false, false, "compact")
 	close.pressed.connect(_close_side)
 	close.mouse_force_pass_scroll_events = true
 	header.add_child(close)
@@ -293,16 +293,13 @@ func _sync_nav() -> void:
 	for name in nav_buttons:
 		var b: Button = nav_buttons[name]
 		var selected: bool = side.visible and name == current_section
-		Style.button(b, selected)
+		Style.button(b, selected, "navigation")
 		# A persistent text marker distinguishes selection from hover and focus.
 		b.text = ("▸  " if selected else "") + str(name)
-		if not selected:
-			b.add_theme_stylebox_override("hover", _style(Color("ded8cc"), LINE))
-			b.add_theme_color_override("font_hover_color", INK)
 
 func _show_detail(item: Array) -> void:
 	_clear_side()
-	var back := _button("←  К списку")
+	var back := _button("←  К списку", false, false, "secondary")
 	back.mouse_force_pass_scroll_events = true
 	back.pressed.connect(_show_section.bind(current_section, false))
 	side_content.add_child(back)
@@ -319,7 +316,7 @@ func _show_detail(item: Array) -> void:
 	var note := _label("Сведения показаны для примера. Управление и последствия пока не реализованы.", 13, MUTED)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	side_content.add_child(note)
-	var close := _button("Закрыть панель")
+	var close := _button("Закрыть панель", false, false, "secondary")
 	close.pressed.connect(_close_side)
 	close.mouse_force_pass_scroll_events = true
 	side_content.add_child(close)
@@ -333,7 +330,7 @@ func _set_speed(value: int) -> void:
 	speed = value
 	for i in range(speed_buttons.size()):
 		var selected := i + 1 == speed
-		Style.button(speed_buttons[i], selected)
+		Style.button(speed_buttons[i], selected, "tab")
 
 func _update_clock() -> void:
 	clock_label.text = "%02d:%02d" % [int(minutes) / 60, int(minutes) % 60]

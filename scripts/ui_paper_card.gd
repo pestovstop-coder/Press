@@ -19,16 +19,18 @@ func _animate(target: float) -> void:
 	animation.tween_property(self, "fold", target, 0.15)
 
 func _on_enter() -> void:
-	_animate(1.0)
+	if not disabled:
+		_animate(1.0)
 
 func _on_exit() -> void:
 	_animate(0.0)
 
 func _on_down() -> void:
-	_animate(0.15)
+	if not disabled:
+		_animate(0.15)
 
 func _on_up() -> void:
-	_animate(1.0 if get_viewport().gui_get_hovered_control() == self else 0.0)
+	_animate(1.0 if not disabled and get_viewport().gui_get_hovered_control() == self else 0.0)
 
 func _draw() -> void:
 	# A restrained second-sheet edge and folded corner, inside the hit rectangle.

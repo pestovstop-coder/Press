@@ -39,5 +39,5 @@ func _process(_delta: float) -> void:
 	var selected: String = controller.get("selected_asset") if active else ""
 	if selected != last_selected:
 		for id in buttons:
-			Style.button(buttons[id], id == selected)
+			Style.button(buttons[id], id == selected, "catalogue")
 		last_selected = selected
